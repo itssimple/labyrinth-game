@@ -29,6 +29,7 @@ pnpm workspaces + Turborepo. Node >= 20, pnpm 10.
 - `pnpm --filter @labyrinth/server dev` — run the game server (port 8080, tsx watch)
 - `pnpm --filter @labyrinth/client-web dev` — run the web client (Vite, port 5173)
 - `pnpm e2e` — two-browser smoke test (tools/e2e-smoke.mjs): host + join + start + move over a real server
+- `docker build -t labyrinth-game . && docker run -p 8080:8080 labyrinth-game` — the whole game (server + web client) in one container at http://localhost:8080 (see docs/DEPLOYMENT.md)
 
 Gotcha: don't put `--` before flags in `pnpm --filter <pkg> <script> --flag` — pnpm forwards the literal `--` and vite/vitest then ignore the flags. Pass flags directly.
 

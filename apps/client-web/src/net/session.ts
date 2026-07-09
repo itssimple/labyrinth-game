@@ -12,6 +12,7 @@ import { UiStore, type ChatEntry } from "../app/store";
 import { InputTracker } from "../game/input";
 import { GameRenderer } from "../game/renderer";
 import { createMatchView, type MatchView } from "../game/state";
+import { serverUrlHost } from "./serverUrl";
 import { GameSocket, serverUrl, type SocketStatus } from "./socket";
 
 const LOBBY_CODE_RE = /^[A-Za-z]{4}$/;
@@ -112,7 +113,11 @@ export class GameSession {
     this.pendingAction = action;
     this.socket?.close();
     this.welcomed = false;
-    this.socket = new GameSocket(serverUrl(), {
+    // Resolved at Host/Join time (not module load) so editing the menu's
+    // server-address field takes effect without a page reload.
+    const url = serverUrl();
+    this.store.set({ serverHost: serverUrlHost(url) });
+    this.socket = new GameSocket(url, {
       onMessage: (msg) => this.onMessage(msg),
       onStatus: (status) => this.onStatus(status),
     });

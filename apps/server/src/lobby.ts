@@ -136,6 +136,24 @@ export class Lobby {
 export class LobbyRegistry {
   private readonly lobbies = new Map<string, Lobby>();
 
+  /** Snapshot of all live lobbies (safe to remove lobbies while iterating). */
+  all(): Lobby[] {
+    return [...this.lobbies.values()];
+  }
+
+  /** Aggregate counters for GET /metrics. */
+  stats(): { lobbies: number; players: number; botsInLobbies: number; runningMatches: number } {
+    let players = 0;
+    let botsInLobbies = 0;
+    let runningMatches = 0;
+    for (const lobby of this.lobbies.values()) {
+      players += lobby.clients.length;
+      botsInLobbies += lobby.bots.length;
+      if (lobby.match) runningMatches++;
+    }
+    return { lobbies: this.lobbies.size, players, botsInLobbies, runningMatches };
+  }
+
   /** Creates a new lobby with a unique random 4-letter code; `host` becomes host. */
   create(host: Client): Lobby {
     let code: string;

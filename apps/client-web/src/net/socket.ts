@@ -1,5 +1,6 @@
 import type { ClientMessage, ServerMessage } from "@labyrinth/protocol";
 import { decodeServerMessage, encodeMessage } from "@labyrinth/protocol";
+import { resolveServerUrl, SERVER_URL_STORAGE_KEY } from "./serverUrl";
 
 export type SocketStatus = "connecting" | "open" | "closed";
 
@@ -47,8 +48,17 @@ export class GameSocket {
   }
 }
 
-/** Resolves the game server WebSocket URL (VITE_SERVER_URL override). */
+/**
+ * Resolves the game server WebSocket URL at call time (so a changed manual
+ * address takes effect on the next Host/Join, no reload). Priority per
+ * docs/CONTRACTS.md: manual field > VITE_SERVER_URL > same-origin (when not
+ * on the vite dev server) > ws://localhost:8080/ws. Logic lives in
+ * serverUrl.ts (pure/testable); this wrapper only gathers the browser inputs.
+ */
 export function serverUrl(): string {
-  const fromEnv = import.meta.env.VITE_SERVER_URL as string | undefined;
-  return fromEnv && fromEnv.length > 0 ? fromEnv : "ws://localhost:8080/ws";
+  return resolveServerUrl(
+    localStorage.getItem(SERVER_URL_STORAGE_KEY),
+    import.meta.env.VITE_SERVER_URL as string | undefined,
+    { protocol: location.protocol, host: location.host, port: location.port },
+  );
 }

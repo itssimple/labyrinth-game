@@ -1,15 +1,25 @@
 import { useState } from "react";
 import type { GameSession } from "../net/session";
 import type { UiState } from "../app/store";
+import { SERVER_URL_STORAGE_KEY } from "../net/serverUrl";
 
 /** Main menu: display name + Host or Join-by-code. */
 export function MenuScreen({ session, ui }: { session: GameSession; ui: UiState }) {
   const [name, setName] = useState(() => localStorage.getItem("labyrinth.name") ?? "");
   const [code, setCode] = useState("");
+  const [serverAddr, setServerAddr] = useState(
+    () => localStorage.getItem(SERVER_URL_STORAGE_KEY) ?? "",
+  );
 
   const remember = (n: string) => {
     setName(n);
     localStorage.setItem("labyrinth.name", n);
+  };
+  // Persisted raw; resolution/normalization happens at Host/Join time
+  // (serverUrl.ts), so edits take effect without a reload. Blank = auto.
+  const rememberServer = (v: string) => {
+    setServerAddr(v);
+    localStorage.setItem(SERVER_URL_STORAGE_KEY, v);
   };
   const nameOk = name.trim().length >= 1 && name.trim().length <= 20;
   const codeOk = /^[A-Za-z]{4}$/.test(code.trim());
@@ -47,8 +57,20 @@ export function MenuScreen({ session, ui }: { session: GameSession; ui: UiState 
             Join game
           </button>
         </div>
+        <label className="field">
+          server address
+          <input
+            value={serverAddr}
+            placeholder="auto"
+            spellCheck={false}
+            onChange={(e) => rememberServer(e.target.value)}
+          />
+        </label>
         <p className="error">{ui.error ?? ""}</p>
-        <span className={`conn ${ui.connection}`}>server: {ui.connection}</span>
+        <span className={`conn ${ui.connection}`}>
+          server: {ui.connection}
+          {ui.serverHost !== null ? ` (${ui.serverHost})` : ""}
+        </span>
       </div>
     </div>
   );

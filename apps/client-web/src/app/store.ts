@@ -32,6 +32,8 @@ export interface MatchResultView {
 export interface UiState {
   screen: Screen;
   connection: ConnectionState;
+  /** host[:port] of the resolved server URL, once a connection was attempted. */
+  serverHost: string | null;
   error: string | null;
   selfId: string | null;
   lobby: LobbyView | null;
@@ -43,6 +45,7 @@ export interface UiState {
 const INITIAL: UiState = {
   screen: "menu",
   connection: "disconnected",
+  serverHost: null,
   error: null,
   selfId: null,
   lobby: null,

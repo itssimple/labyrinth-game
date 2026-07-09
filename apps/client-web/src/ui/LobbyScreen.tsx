@@ -74,7 +74,10 @@ export function LobbyScreen({ session, ui }: { session: GameSession; ui: UiState
           Leave lobby
         </button>
         <p className="error">{ui.error ?? ""}</p>
-        <span className={`conn ${ui.connection}`}>server: {ui.connection}</span>
+        <span className={`conn ${ui.connection}`}>
+          server: {ui.connection}
+          {ui.serverHost !== null ? ` (${ui.serverHost})` : ""}
+        </span>
       </div>
     </div>
   );
