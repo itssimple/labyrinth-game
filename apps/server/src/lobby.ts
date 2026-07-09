@@ -74,7 +74,7 @@ export class Lobby {
       type: "lobbyState",
       code: this.code,
       hostId: this.hostId,
-      players: this.clients.map((c) => ({ playerId: c.playerId, name: c.name })),
+      players: this.clients.map((c) => ({ playerId: c.playerId, name: c.name, isBot: false })),
     };
     this.broadcast(msg);
   }

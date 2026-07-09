@@ -161,6 +161,60 @@ and echoed to all clients, so unbounded values are a DoS vector), reject
 unknown `type`, ensure numbers are finite, moveX/moveY ∈ {-1, 0, 1}. Tests:
 round-trip every message type; fuzz garbage inputs return null.
 
+## @labyrinth/bots
+
+Server-side AI players. **Bots use the same rules as players** (README): a bot
+occupies a normal simulation slot and acts ONLY by producing `PlayerInput` —
+it must never mutate the simulation directly. Fully deterministic: same seed +
+maze + observation sequence => identical inputs (no Math.random/Date).
+
+```ts
+import type { Maze, PerceivedSound } from "@labyrinth/common";
+import type { PlayerInput } from "@labyrinth/ecs";
+
+/** What a bot is allowed to know each tick — the same view a human client gets. */
+export interface BotObservation {
+  tick: number;
+  x: number;
+  y: number;
+  escaped: boolean;
+  /** Cell indices currently in line of sight (server-computed, as for humans). */
+  visibleCells: ReadonlySet<number>;
+  /** Sounds as this bot perceives them (confidence-banded, like a human client). */
+  sounds: readonly PerceivedSound[];
+}
+
+export interface BotController {
+  next(obs: BotObservation): PlayerInput;
+}
+
+/** seed: derive per-bot determinism from `${matchSeed}:bot:${slot}`. */
+export function createBotController(opts: {
+  maze: Maze;
+  seed: string;
+  slot: number;
+}): BotController;
+
+/** Deterministic friendly bot display name for lobby index i ("Bot Juno" etc). */
+export function botName(i: number): string;
+```
+
+Behavior v1 (keep simple, it's a testing partner, not a challenge):
+
+- Knows the maze topology (legitimate — every client regenerates it from the
+  broadcast seed) but NOT live state: it only "knows" the exit once the exit
+  cell has appeared in its accumulated visibleCells memory.
+- Explore: remember all cells ever seen; pathfind (BFS honoring walls) to the
+  nearest never-seen cell; re-plan when the target is reached or unreachable.
+  Tie-breaks and any wandering choices come from the seeded RNG.
+- Escape: once the exit cell has been seen, pathfind to it and walk there.
+- Movement: emit moveX/moveY ∈ {-1,0,1} toward the next path cell's center;
+  walk speed (no sprint/sneak in v1 — TODO: sneak near heard sounds).
+- Tests: determinism (two controllers, same seed/obs => same inputs over 100+
+  ticks); a bot in a small maze reaches the exit within a generous tick budget
+  when fed real computeVisibleCells observations; never emits values outside
+  the PlayerInput contract.
+
 ## @labyrinth/server (apps/server)
 
 Fastify on port **8080** (`PORT` env overrides): `GET /healthz` → `{ ok: true }`;
@@ -175,6 +229,18 @@ connection identity is not simulation state). Lobby: `createLobby` makes a
 `matchStart` (yourSpawnIndex = join order), run `setInterval` loop at TICK_RATE.
 `endTick` comes from `MATCH_DURATION_S_PER_SIZE[options.size] * TICK_RATE` —
 bigger labyrinths get more time.
+Bots: host-only `addBot` adds an AI player (server assigns playerId + botName;
+reject beyond MAX_PLAYERS with `lobbyFull`); host-only `removeBot` removes one
+(`badMessage` if the id isn't a bot in this lobby). Bots appear in lobbyState
+with `isBot: true`, count toward MAX_PLAYERS_PER_SIZE at startMatch, get sim
+slots in roster order, and are driven each tick by @labyrinth/bots controllers
+fed the same per-player view humans get (computeVisibleCells + perceiveSound
+with the secret jitter salt) BEFORE sim.step(). Bots appear in snapshots'
+visiblePlayers and emit sounds like anyone else. Their escapes join
+matchEnd.escaped. Match end/abort conditions consider HUMAN players only —
+bots never keep a match alive (all humans escaped => allEscaped even if bots
+remain; all humans gone => abort). Bots are removed from the lobby only by
+removeBot or lobby deletion, and persist across matches.
 `startMatch` must also enforce `MAX_PLAYERS_PER_SIZE` from @labyrinth/common:
 if the lobby has more players than the chosen size allows, reply
 `error: "tooManyPlayersForSize"` and do not start.
@@ -198,7 +264,9 @@ React shell (screens) + PixiJS canvas (game). React never owns gameplay state.
 
 Screens: **Main menu** (name input, Host / Join) → **Lobby** (code display,
 player list, host picks size + Start; sizes whose `MAX_PLAYERS_PER_SIZE` cap is
-below the current roster are disabled with the cap shown, e.g. "tiny — max 2") → **Game** → **Match end** (escape order,
+below the current roster are disabled with the cap shown, e.g. "tiny — max 2";
+host also gets "Add bot" (sends `addBot`) and a remove control per bot row
+(sends `removeBot`); bot rows show a BOT tag via `isBot`) → **Game** → **Match end** (escape order,
 back to lobby). Server URL: `ws://localhost:8080/ws` (override via
 `VITE_SERVER_URL`).
 

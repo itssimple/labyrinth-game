@@ -55,6 +55,17 @@ export interface ChatMsg {
   text: string;
 }
 
+/** Host only. Adds one AI bot to the lobby; the server names it. */
+export interface AddBotMsg {
+  type: "addBot";
+}
+
+/** Host only. Removes the bot with this playerId from the lobby. */
+export interface RemoveBotMsg {
+  type: "removeBot";
+  playerId: string;
+}
+
 export type ClientMessage =
   | HelloMsg
   | CreateLobbyMsg
@@ -62,7 +73,9 @@ export type ClientMessage =
   | LeaveLobbyMsg
   | StartMatchMsg
   | InputMsg
-  | ChatMsg;
+  | ChatMsg
+  | AddBotMsg
+  | RemoveBotMsg;
 
 // ---------------------------------------------------------------------------
 // Server -> Client
@@ -90,6 +103,8 @@ export interface ErrorMsg {
 export interface LobbyPlayerInfo {
   playerId: string;
   name: string;
+  /** AI bots occupy player slots and count toward every player cap. */
+  isBot: boolean;
 }
 
 export interface LobbyStateMsg {

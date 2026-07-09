@@ -5,6 +5,7 @@ import type {
   HelloMsg,
   InputMsg,
   JoinLobbyMsg,
+  RemoveBotMsg,
   ServerMessage,
   StartMatchMsg,
 } from "./messages.js";
@@ -21,6 +22,8 @@ const SEED_MAX = 64;
 const MODIFIERS_MAX = 8;
 /** Maximum length of a single maze modifier accepted from clients. */
 const MODIFIER_MAX = 32;
+/** Maximum playerId length accepted from clients (server ids are UUIDs, 36). */
+const PLAYER_ID_MAX = 64;
 
 /** The five valid maze sizes; must stay in sync with MazeSize in @labyrinth/common. */
 const MAZE_SIZES: ReadonlySet<string> = new Set<MazeSize>([
@@ -145,6 +148,15 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
       const { text } = parsed;
       if (typeof text !== "string" || text.length > CHAT_MAX) return null;
       const msg: ChatMsg = { type: "chat", text };
+      return msg;
+    }
+    case "addBot":
+      return { type: "addBot" };
+    case "removeBot": {
+      const { playerId } = parsed;
+      if (typeof playerId !== "string" || playerId.length < 1 || playerId.length > PLAYER_ID_MAX)
+        return null;
+      const msg: RemoveBotMsg = { type: "removeBot", playerId };
       return msg;
     }
     default:

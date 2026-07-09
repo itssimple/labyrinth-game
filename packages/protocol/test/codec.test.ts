@@ -40,7 +40,7 @@ const serverMessages: ServerMessage[] = [
     type: "lobbyState",
     code: "WXYZ",
     hostId: "p-123",
-    players: [{ playerId: "p-123", name: "Ariadne" }],
+    players: [{ playerId: "p-123", name: "Ariadne", isBot: false }],
   },
   {
     type: "matchStart",
