@@ -1,2 +1,6 @@
-// TODO(bots phase): deterministic AI bot controllers. API in docs/CONTRACTS.md.
-export {};
+export {
+  createBotController,
+  type BotController,
+  type BotObservation,
+} from "./controller.js";
+export { botName } from "./names.js";

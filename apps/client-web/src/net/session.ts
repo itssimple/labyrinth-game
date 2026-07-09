@@ -68,6 +68,16 @@ export class GameSession {
     this.socket?.send({ type: "startMatch", options: { seed: "", size } });
   }
 
+  /** Host only: asks the server to add an AI bot to the lobby. */
+  addBot(): void {
+    this.socket?.send({ type: "addBot" });
+  }
+
+  /** Host only: asks the server to remove the bot with this playerId. */
+  removeBot(playerId: string): void {
+    this.socket?.send({ type: "removeBot", playerId });
+  }
+
   /** Sends a chat message (trimmed, clamped to protocol limit). */
   sendChat(text: string): void {
     const t = text.trim().slice(0, 200);

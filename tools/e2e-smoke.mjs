@@ -5,9 +5,15 @@
  * Run from the repo root: `node tools/e2e-smoke.mjs`
  *
  * Spawns the authoritative server (PORT=8091) and the Vite dev client
- * (port 5183), then drives two isolated headless Chromium contexts through:
- * host lobby -> join by code -> start a tiny match -> hold W -> assert the
- * match timer is counting down, collecting console errors from both pages.
+ * (port 5183), then drives two scenarios against the same server + vite:
+ *
+ * 1. TWO-PLAYER: two isolated headless Chromium contexts — host lobby ->
+ *    join by code -> start a tiny match -> hold W -> assert the match timer
+ *    is counting down, collecting console errors from both pages.
+ * 2. SOLO-WITH-BOT: a fresh context hosts a lobby, clicks "Add bot",
+ *    asserts the roster shows 2 entries with a BOT tag, starts a small
+ *    match, asserts the Pixi canvas + HUD timer countdown, and lets the
+ *    match run ~4s with zero console errors.
  *
  * Exit code 0 + "SMOKE PASS" on success; non-zero with details otherwise.
  * Only the processes spawned here are killed on exit.
@@ -286,10 +292,81 @@ async function main() {
   if (consoleErrors.length > 0) {
     throw new Error(`console errors observed:\n  ${consoleErrors.join("\n  ")}`);
   }
+  log(`two-player scenario OK (lobby ${code}, timer ${t0}s -> ${t1}s)`);
+
+  // ---------------------------------------------------------------------
+  // Scenario 2 — SOLO-WITH-BOT: reuse the running server + vite.
+  // ---------------------------------------------------------------------
+  // Close the two-player contexts first so their tiny match winds down and
+  // cannot leak console errors into this scenario.
+  await ctxA.close();
+  await ctxB.close();
+
+  log("SOLO-WITH-BOT: carol hosts a fresh lobby ...");
+  const ctxC = await browser.newContext();
+  const pageC = await ctxC.newPage();
+  const soloErrors = [];
+  watchErrors(pageC, "carol", soloErrors);
+
+  // 9. Carol hosts a lobby.
+  await pageC.goto(APP_URL, { waitUntil: "domcontentloaded" });
+  await pageC.getByPlaceholder("your name").fill("carol");
+  await pageC.getByRole("button", { name: "Host game" }).click();
+  await pageC.locator(".lobby-code").waitFor({ timeout: 15_000 });
+  const codeC = (await pageC.locator(".lobby-code").textContent())?.trim() ?? "";
+  if (!/^[A-Z]{4}$/.test(codeC)) throw new Error(`bad lobby code read from DOM: ${JSON.stringify(codeC)}`);
+  log(`carol hosted lobby ${codeC}`);
+
+  // 10. Add a bot; roster must show 2 entries, exactly one tagged BOT.
+  await pageC.getByRole("button", { name: "Add bot" }).click();
+  await pageC
+    .waitForFunction(() => document.querySelectorAll(".player-list li").length === 2, undefined, {
+      timeout: 10_000,
+    })
+    .catch(async () => {
+      const n = await pageC.locator(".player-list li").count();
+      throw new Error(`carol's roster shows ${n} entries after Add bot, expected 2`);
+    });
+  const botTagCount = await pageC.locator(".player-list li .host-tag", { hasText: /^BOT$/ }).count();
+  if (botTagCount !== 1) {
+    throw new Error(`expected exactly 1 roster entry with a BOT tag, found ${botTagCount}`);
+  }
+  log("roster shows 2 entries, one tagged BOT");
+
+  // 11. Start a small match; the Pixi canvas must appear.
+  await pageC.locator("select").selectOption("small");
+  await pageC.getByRole("button", { name: "Start match" }).click();
+  await pageC
+    .locator(".game-canvas canvas")
+    .waitFor({ timeout: 20_000 })
+    .catch(async () => {
+      const err = await pageC.locator(".error").first().textContent().catch(() => null);
+      throw new Error(`carol never reached the game screen (Pixi canvas missing)${err ? `; UI error: ${err}` : ""}`);
+    });
+  log("carol shows the game canvas");
+
+  // 12. HUD timer must be counting down; let the bot match run ~4s.
+  const timerC = pageC.locator(".hud .timer");
+  await timerC.waitFor({ timeout: 10_000 });
+  const s0 = parseTimer((await timerC.textContent()) ?? "");
+  await sleep(4000);
+  const s1 = parseTimer((await timerC.textContent()) ?? "");
+  if (!(s1 < s0)) {
+    throw new Error(`solo-with-bot match timer is not counting down (stuck at ${s0}s) — match not running?`);
+  }
+  log(`solo-with-bot match running: timer ${s0}s -> ${s1}s`);
+
+  // 13. Zero console errors during the whole bot scenario.
+  await sleep(500); // let any straggling errors land
+  if (soloErrors.length > 0) {
+    throw new Error(`console errors observed in SOLO-WITH-BOT scenario:\n  ${soloErrors.join("\n  ")}`);
+  }
 
   console.log(
-    `\nSMOKE PASS — lobby ${code}: 2 players joined, tiny match started on both pages, ` +
-      `timer counting down (${t0}s -> ${t1}s), zero console errors.`,
+    `\nSMOKE PASS — two-player: lobby ${code}, 2 players joined, tiny match started on both pages, ` +
+      `timer counting down (${t0}s -> ${t1}s), zero console errors; ` +
+      `solo-with-bot: lobby ${codeC}, roster 2 (1 BOT), small match ran ~4s, ` +
+      `timer counting down (${s0}s -> ${s1}s), zero console errors.`,
   );
 }
 

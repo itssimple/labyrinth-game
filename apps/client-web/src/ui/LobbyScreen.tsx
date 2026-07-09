@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAX_PLAYERS_PER_SIZE, MAZE_DIMENSIONS, type MazeSize } from "@labyrinth/common";
+import { MAX_PLAYERS, MAX_PLAYERS_PER_SIZE, MAZE_DIMENSIONS, type MazeSize } from "@labyrinth/common";
 import type { GameSession } from "../net/session";
 import type { UiState } from "../app/store";
 
@@ -23,6 +23,17 @@ export function LobbyScreen({ session, ui }: { session: GameSession; ui: UiState
               {p.name}
               {p.playerId === lobby.hostId && <span className="host-tag">HOST</span>}
               {p.playerId === ui.selfId && <span className="host-tag">YOU</span>}
+              {p.isBot && <span className="host-tag">BOT</span>}
+              {p.isBot && isHost && (
+                <button
+                  className="remove-bot"
+                  title="Remove bot"
+                  aria-label={`Remove ${p.name}`}
+                  onClick={() => session.removeBot(p.playerId)}
+                >
+                  ✕
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -42,6 +53,13 @@ export function LobbyScreen({ session, ui }: { session: GameSession; ui: UiState
                 ))}
               </select>
             </label>
+            <button
+              className="secondary"
+              disabled={lobby.players.length >= MAX_PLAYERS}
+              onClick={() => session.addBot()}
+            >
+              Add bot
+            </button>
             <button
               disabled={lobby.players.length > MAX_PLAYERS_PER_SIZE[size]}
               onClick={() => session.startMatch(size)}

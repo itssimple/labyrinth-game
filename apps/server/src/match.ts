@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createBotController, type BotController } from "@labyrinth/bots";
 import {
   MATCH_DURATION_S_PER_SIZE,
   TICK_RATE,
@@ -6,6 +7,7 @@ import {
   type Maze,
   type MazeGenOptions,
   type PerceivedSound,
+  type RawSoundEvent,
 } from "@labyrinth/common";
 import {
   computeVisibleCells,
@@ -32,6 +34,15 @@ interface MatchPlayer {
   ackSeq: number;
 }
 
+/** One AI player in this match: a normal sim slot driven by a controller. */
+interface MatchBot {
+  /** The lobby bot's playerId — bots persist in the lobby across matches. */
+  readonly playerId: string;
+  /** Simulation slot, assigned after every human (roster order). */
+  readonly slot: number;
+  readonly controller: BotController;
+}
+
 /**
  * One running Escape-mode match for a lobby. The interval loop here is
  * transport pacing only — all game rules live in @labyrinth/ecs. Snapshots
@@ -54,6 +65,13 @@ export class Match {
   private readonly jitterSeed: string;
   private readonly sim: Simulation;
   private readonly players = new Map<string, MatchPlayer>();
+  private readonly bots: MatchBot[] = [];
+  /**
+   * Sounds emitted on the previous tick, kept for bot observations: a bot
+   * "hears" one tick late, exactly like a human client that only learns of a
+   * sound from the snapshot sent after the tick that produced it.
+   */
+  private prevSounds: readonly RawSoundEvent[] = [];
   private readonly escapedIds: string[] = [];
   private interval: NodeJS.Timeout | null = null;
 
@@ -82,6 +100,16 @@ export class Match {
         pending: null,
         lastSeq: -1,
         ackSeq: 0,
+      });
+    }
+    // Bots get sim slots after every human, in lobby roster order. They play
+    // by the same rules: a normal slot, driven purely through PlayerInput.
+    for (const bot of lobby.bots) {
+      const slot = this.sim.addPlayer();
+      this.bots.push({
+        playerId: bot.playerId,
+        slot,
+        controller: createBotController({ maze: this.maze, seed: this.seed, slot }),
       });
     }
   }
@@ -114,10 +142,19 @@ export class Match {
     this.players.delete(client.playerId);
     this.sim.removePlayer(p.slot);
     if (this.players.size === 0) {
+      // Bots never keep a match alive: no humans left => abort.
       this.abort();
       return;
     }
     this.checkAllEscaped();
+  }
+
+  /** Removes a bot's simulation slot when the host removes it mid-match. */
+  removeBot(playerId: string): void {
+    const i = this.bots.findIndex((b) => b.playerId === playerId);
+    if (i === -1) return;
+    const [bot] = this.bots.splice(i, 1);
+    if (bot) this.sim.removePlayer(bot.slot);
   }
 
   /** Stops the tick loop without broadcasting (e.g. lobby emptied out). */
@@ -129,6 +166,34 @@ export class Match {
   }
 
   private tick(): void {
+    // Drive bots first (before human inputs and step). Each live bot observes
+    // exactly what a human client would: its own vision via computeVisibleCells
+    // and confidence-banded sounds via perceiveSound with the secret jitter
+    // seed — never raw simulation state. Sounds are last tick's (see
+    // prevSounds): one tick of hearing latency, same as a human client.
+    for (const bot of this.bots) {
+      const state = this.sim.getPlayerState(bot.slot);
+      if (state.escaped) continue;
+      const visibleCells = computeVisibleCells(this.maze, state.x, state.y);
+      const sounds: PerceivedSound[] = [];
+      for (const raw of this.prevSounds) {
+        if (raw.emitterId === bot.slot) continue; // a bot never hears itself
+        const heard = perceiveSound(this.maze, this.jitterSeed, raw, state.x, state.y);
+        if (heard) sounds.push(heard);
+      }
+      this.sim.setInput(
+        bot.slot,
+        bot.controller.next({
+          tick: this.sim.tick,
+          x: state.x,
+          y: state.y,
+          escaped: state.escaped,
+          visibleCells,
+          sounds,
+        }),
+      );
+    }
+
     // Apply the latest validated input per player; absent = keep previous.
     for (const p of this.players.values()) {
       if (p.pending) {
@@ -144,9 +209,13 @@ export class Match {
     }
 
     const result = this.sim.step();
+    this.prevSounds = result.sounds;
     for (const slot of result.escapes) {
       for (const p of this.players.values()) {
         if (p.slot === slot) this.escapedIds.push(p.client.playerId);
+      }
+      for (const b of this.bots) {
+        if (b.slot === slot) this.escapedIds.push(b.playerId);
       }
     }
 
@@ -155,11 +224,17 @@ export class Match {
       p,
       state: this.sim.getPlayerState(p.slot),
     }));
+    // Everyone a snapshot may show: humans and bots alike (bots are just
+    // player states to an observer).
+    const observable = [
+      ...states.map(({ p, state }) => ({ playerId: p.client.playerId, state })),
+      ...this.bots.map((b) => ({ playerId: b.playerId, state: this.sim.getPlayerState(b.slot) })),
+    ];
     for (const { p, state } of states) {
       const visible = computeVisibleCells(this.maze, state.x, state.y);
       const visiblePlayers: VisiblePlayerState[] = [];
-      for (const other of states) {
-        if (other.p === p || other.state.escaped) continue;
+      for (const other of observable) {
+        if (other.playerId === p.client.playerId || other.state.escaped) continue;
         const cell = cellIndex(
           this.maze.width,
           Math.floor(other.state.x),
@@ -167,7 +242,7 @@ export class Match {
         );
         if (visible.has(cell)) {
           visiblePlayers.push({
-            playerId: other.p.client.playerId,
+            playerId: other.playerId,
             x: other.state.x,
             y: other.state.y,
           });
@@ -195,7 +270,10 @@ export class Match {
     if (result.tick >= this.endTick) this.end("timeUp");
   }
 
-  /** Ends the match if every still-connected player has escaped. */
+  /**
+   * Ends the match if every still-connected HUMAN player has escaped. Bots
+   * are deliberately not consulted — they never keep a match alive.
+   */
   private checkAllEscaped(): boolean {
     if (this.interval === null || this.players.size === 0) return false;
     for (const p of this.players.values()) {
@@ -224,5 +302,7 @@ export class Match {
   private releasePlayers(): void {
     for (const p of this.players.values()) this.sim.removePlayer(p.slot);
     this.players.clear();
+    for (const b of this.bots) this.sim.removePlayer(b.slot);
+    this.bots.length = 0;
   }
 }

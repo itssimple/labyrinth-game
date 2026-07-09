@@ -131,7 +131,7 @@ export function handleConnection(socket: WebSocket, registry: LobbyRegistry): vo
           return;
         }
         const sizeCap = MAX_PLAYERS_PER_SIZE[msg.options.size];
-        if (lobby.clients.length > sizeCap) {
+        if (lobby.memberCount > sizeCap) {
           sendError(
             "tooManyPlayersForSize",
             `${msg.options.size} supports at most ${sizeCap} players`,
@@ -157,6 +157,38 @@ export function handleConnection(socket: WebSocket, registry: LobbyRegistry): vo
       }
       case "input": {
         c.lobby?.match?.handleInput(c, msg);
+        return;
+      }
+      case "addBot": {
+        const lobby = c.lobby;
+        if (!lobby) {
+          sendError("notInLobby", "you are not in a lobby");
+          return;
+        }
+        if (lobby.hostId !== c.playerId) {
+          sendError("notHost", "only the host can add bots");
+          return;
+        }
+        if (lobby.isFull()) {
+          sendError("lobbyFull", "the lobby is full");
+          return;
+        }
+        lobby.addBot();
+        return;
+      }
+      case "removeBot": {
+        const lobby = c.lobby;
+        if (!lobby) {
+          sendError("notInLobby", "you are not in a lobby");
+          return;
+        }
+        if (lobby.hostId !== c.playerId) {
+          sendError("notHost", "only the host can remove bots");
+          return;
+        }
+        if (!lobby.removeBot(msg.playerId)) {
+          sendError("badMessage", "that id is not a bot in this lobby");
+        }
         return;
       }
       case "chat": {

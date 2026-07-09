@@ -131,6 +131,20 @@ button.secondary {
   margin-left: 8px;
 }
 
+.player-list .remove-bot {
+  float: right;
+  background: transparent;
+  border: none;
+  color: #ff6d7d;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.player-list .remove-bot:hover:enabled {
+  background: #2c1a20;
+}
+
 .conn {
   font-size: 11px;
 }
