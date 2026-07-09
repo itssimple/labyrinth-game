@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { botName } from "@labyrinth/bots";
+import { botName } from "@echowake/bots";
 import {
   MOVE_SPEED,
   PROTOCOL_VERSION,
@@ -12,9 +12,9 @@ import {
   WALL_W,
   cellIndex,
   type Maze,
-} from "@labyrinth/common";
-import { computeVisibleCells } from "@labyrinth/ecs";
-import { generateMaze } from "@labyrinth/mazegen";
+} from "@echowake/common";
+import { computeVisibleCells } from "@echowake/ecs";
+import { generateMaze } from "@echowake/mazegen";
 import {
   encodeMessage,
   type ClientMessage,
@@ -22,7 +22,7 @@ import {
   type MatchStartMsg,
   type ServerMessage,
   type SnapshotMsg,
-} from "@labyrinth/protocol";
+} from "@echowake/protocol";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildServer } from "../src/app.js";

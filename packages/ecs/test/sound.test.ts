@@ -1,4 +1,4 @@
-import { WALL_E, type RawSoundEvent } from "@labyrinth/common";
+import { WALL_E, type RawSoundEvent } from "@echowake/common";
 import { describe, expect, it } from "vitest";
 import { perceiveSound } from "../src/index.js";
 import { addWall, makeOpenMaze } from "./helpers.js";

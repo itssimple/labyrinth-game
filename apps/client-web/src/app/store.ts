@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { LobbyPlayerInfo } from "@labyrinth/protocol";
+import type { LobbyPlayerInfo } from "@echowake/protocol";
 
 export type Screen = "menu" | "lobby" | "game" | "end";
 export type ConnectionState = "disconnected" | "connecting" | "connected";

@@ -6,7 +6,7 @@ import {
   type Maze,
   type RawSoundEvent,
   type SoundKind,
-} from "@labyrinth/common";
+} from "@echowake/common";
 import { Types, addComponent, addEntity, createWorld, defineComponent, removeEntity } from "bitecs";
 import { moveCircle } from "./movement.js";
 import { FOOTSTEP_INTERVAL_S } from "./tuning.js";
@@ -86,7 +86,7 @@ export function createSimulation(opts: { maze: Maze; seed: string }): Simulation
   const eidFor = (slot: number): number => {
     const eid = slots[slot];
     if (eid === null || eid === undefined) {
-      throw new Error(`@labyrinth/ecs: no player in slot ${slot}`);
+      throw new Error(`@echowake/ecs: no player in slot ${slot}`);
     }
     return eid;
   };
@@ -99,9 +99,9 @@ export function createSimulation(opts: { maze: Maze; seed: string }): Simulation
 
     addPlayer(): number {
       const slot = slots.indexOf(null);
-      if (slot === -1) throw new Error("@labyrinth/ecs: simulation is full");
+      if (slot === -1) throw new Error("@echowake/ecs: simulation is full");
       const spawn = maze.spawns[slot];
-      if (!spawn) throw new Error(`@labyrinth/ecs: maze has no spawn for slot ${slot}`);
+      if (!spawn) throw new Error(`@echowake/ecs: maze has no spawn for slot ${slot}`);
       const eid = addEntity(world);
       addComponent(world, Position, eid);
       addComponent(world, InputC, eid);

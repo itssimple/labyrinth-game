@@ -8,9 +8,9 @@ import {
   type Cell,
   type Maze,
   type MazeGenOptions,
-} from "@labyrinth/common";
+} from "@echowake/common";
 // TODO(integration): rand.js re-exports a private fallback until
-// @labyrinth/math is implemented — see src/rand.ts.
+// @echowake/math is implemented — see src/rand.ts.
 import { createRng, hashString } from "./rand.js";
 import { carveLoops, carvePerfectMaze } from "./carve.js";
 import { assignMaterials } from "./materials.js";

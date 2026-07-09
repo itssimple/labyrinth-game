@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Two-browser end-to-end smoke test for the labyrinth game.
+ * Two-browser end-to-end smoke test for Echowake.
  *
  * Run from the repo root: `node tools/e2e-smoke.mjs`
  *
@@ -191,7 +191,7 @@ function dumpChildOutput() {
 async function main() {
   // 1. Server.
   log(`starting server on :${SERVER_PORT} ...`);
-  spawnChild("server", "pnpm", ["--filter", "@labyrinth/server", "start"], {
+  spawnChild("server", "pnpm", ["--filter", "@echowake/server", "start"], {
     PORT: String(SERVER_PORT),
   });
   await waitForHttp(HEALTH_URL, {
@@ -207,7 +207,7 @@ async function main() {
     "pnpm",
     // NB: no "--" separator — pnpm would forward it literally and vite would
     // then ignore the port flags.
-    ["--filter", "@labyrinth/client-web", "dev", "--port", String(CLIENT_PORT), "--strictPort"],
+    ["--filter", "@echowake/client-web", "dev", "--port", String(CLIENT_PORT), "--strictPort"],
     { VITE_SERVER_URL: WS_URL },
   );
   await waitForHttp(APP_URL, { timeoutMs: 60_000 });

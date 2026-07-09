@@ -1,4 +1,4 @@
-import type { MazeGenOptions, MazeSize } from "@labyrinth/common";
+import type { MazeGenOptions, MazeSize } from "@echowake/common";
 import type {
   ChatMsg,
   ClientMessage,
@@ -25,7 +25,7 @@ const MODIFIER_MAX = 32;
 /** Maximum playerId length accepted from clients (server ids are UUIDs, 36). */
 const PLAYER_ID_MAX = 64;
 
-/** The five valid maze sizes; must stay in sync with MazeSize in @labyrinth/common. */
+/** The five valid maze sizes; must stay in sync with MazeSize in @echowake/common. */
 const MAZE_SIZES: ReadonlySet<string> = new Set<MazeSize>([
   "tiny",
   "small",

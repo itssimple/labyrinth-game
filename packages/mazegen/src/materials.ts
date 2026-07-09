@@ -1,4 +1,4 @@
-import { Material, cellIndex, type Cell, type MaterialId } from "@labyrinth/common";
+import { Material, cellIndex, type Cell, type MaterialId } from "@echowake/common";
 import type { Rng } from "./rand.js";
 
 /** Side length (in cells) of a material region. */

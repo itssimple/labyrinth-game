@@ -1,5 +1,5 @@
 import { Container, Graphics } from "pixi.js";
-import { cellIndex, FogState, type FogStateId, type Maze } from "@labyrinth/common";
+import { cellIndex, FogState, type FogStateId, type Maze } from "@echowake/common";
 import type { FogMemory } from "./fog";
 import { EXIT_COLOR, YOU_COLOR } from "./palette";
 

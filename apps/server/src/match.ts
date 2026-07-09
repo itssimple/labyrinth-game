@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createBotController, type BotController } from "@labyrinth/bots";
+import { createBotController, type BotController } from "@echowake/bots";
 import {
   MATCH_DURATION_S_PER_SIZE,
   TICK_RATE,
@@ -8,16 +8,16 @@ import {
   type MazeGenOptions,
   type PerceivedSound,
   type RawSoundEvent,
-} from "@labyrinth/common";
+} from "@echowake/common";
 import {
   computeVisibleCells,
   createSimulation,
   perceiveSound,
   type Simulation,
-} from "@labyrinth/ecs";
-import { generateMaze } from "@labyrinth/mazegen";
-import { clamp } from "@labyrinth/math";
-import type { InputMsg, SnapshotMsg, VisiblePlayerState } from "@labyrinth/protocol";
+} from "@echowake/ecs";
+import { generateMaze } from "@echowake/mazegen";
+import { clamp } from "@echowake/math";
+import type { InputMsg, SnapshotMsg, VisiblePlayerState } from "@echowake/protocol";
 import type { Client } from "./client.js";
 import type { Lobby } from "./lobby.js";
 
@@ -45,7 +45,7 @@ interface MatchBot {
 
 /**
  * One running Escape-mode match for a lobby. The interval loop here is
- * transport pacing only — all game rules live in @labyrinth/ecs. Snapshots
+ * transport pacing only — all game rules live in @echowake/ecs. Snapshots
  * are built strictly from computeVisibleCells + perceiveSound so a client
  * never learns a hidden position or an exact (raw) sound.
  */

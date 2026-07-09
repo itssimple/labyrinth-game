@@ -9,7 +9,7 @@ import {
   WALL_W,
   type FogStateId,
   type Maze,
-} from "@labyrinth/common";
+} from "@echowake/common";
 import type { MatchView } from "./state";
 import { Minimap } from "./minimap";
 import { RippleField } from "./ripples";

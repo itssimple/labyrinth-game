@@ -16,7 +16,7 @@ export interface PageLocation {
 }
 
 /** localStorage key for the manual "server address" field (blank = auto). */
-export const SERVER_URL_STORAGE_KEY = "labyrinth.serverUrl";
+export const SERVER_URL_STORAGE_KEY = "echowake.serverUrl";
 
 /** Only the vite dev server (5173) counts as dev — preview (4173) does not. */
 const VITE_DEV_PORT = "5173";

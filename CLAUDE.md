@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-A multiplayer-first, top-down pixel-art labyrinth game (working title "Labyrinth Game"): procedurally generated mazes, fog of war, and visualized sound propagation ("sound is vision") with stealth and social-deduction elements. MIT-licensed, intended for eventual commercial release across web, desktop (Electron), and Android (Capacitor).
+**Echowake** — a multiplayer-first, top-down pixel-art labyrinth game (formerly working title "Labyrinth Game"): procedurally generated mazes, fog of war, and visualized sound propagation ("sound is vision") with stealth and social-deduction elements. MIT-licensed, intended for eventual commercial release across web, desktop (Electron), and Android (Capacitor).
 
 ## Tech Stack (decided, do not swap without discussion)
 
@@ -25,11 +25,11 @@ pnpm workspaces + Turborepo. Node >= 20, pnpm 10.
 
 - `pnpm install` — install everything
 - `pnpm test` / `pnpm typecheck` / `pnpm build` — run via turbo across all packages
-- `pnpm --filter @labyrinth/<pkg> test` — one package's tests (vitest); add `-- path/to/file.test.ts` for a single file
-- `pnpm --filter @labyrinth/server dev` — run the game server (port 8080, tsx watch)
-- `pnpm --filter @labyrinth/client-web dev` — run the web client (Vite, port 5173)
+- `pnpm --filter @echowake/<pkg> test` — one package's tests (vitest); add `-- path/to/file.test.ts` for a single file
+- `pnpm --filter @echowake/server dev` — run the game server (port 8080, tsx watch)
+- `pnpm --filter @echowake/client-web dev` — run the web client (Vite, port 5173)
 - `pnpm e2e` — two-browser smoke test (tools/e2e-smoke.mjs): host + join + start + move over a real server
-- `docker build -t labyrinth-game . && docker run -p 8080:8080 labyrinth-game` — the whole game (server + web client) in one container at http://localhost:8080 (see docs/DEPLOYMENT.md)
+- `docker build -t echowake . && docker run -p 8080:8080 echowake` — the whole game (server + web client) in one container at http://localhost:8080 (see docs/DEPLOYMENT.md)
 
 Gotcha: don't put `--` before flags in `pnpm --filter <pkg> <script> --flag` — pnpm forwards the literal `--` and vite/vitest then ignore the flags. Pass flags directly.
 

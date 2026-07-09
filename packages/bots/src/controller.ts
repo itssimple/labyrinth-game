@@ -8,9 +8,9 @@ import {
   cellIndex,
   type Maze,
   type PerceivedSound,
-} from "@labyrinth/common";
-import type { PlayerInput } from "@labyrinth/ecs";
-import { createRng, type Rng } from "@labyrinth/math";
+} from "@echowake/common";
+import type { PlayerInput } from "@echowake/ecs";
+import { createRng, type Rng } from "@echowake/math";
 
 /** What a bot is allowed to know each tick — the same view a human client gets. */
 export interface BotObservation {

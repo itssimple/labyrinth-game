@@ -1,4 +1,4 @@
-import { Material, type MaterialId } from "@labyrinth/common";
+import { Material, type MaterialId } from "@echowake/common";
 
 /**
  * Seconds of continuous movement between footstep emissions, per movement

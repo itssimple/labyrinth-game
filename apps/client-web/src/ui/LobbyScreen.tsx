@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MAX_PLAYERS, MAX_PLAYERS_PER_SIZE, MAZE_DIMENSIONS, type MazeSize } from "@labyrinth/common";
+import { MAX_PLAYERS, MAX_PLAYERS_PER_SIZE, MAZE_DIMENSIONS, type MazeSize } from "@echowake/common";
 import type { GameSession } from "../net/session";
 import type { UiState } from "../app/store";
 

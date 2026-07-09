@@ -4,7 +4,7 @@
  *
  * Run from the repo root: `pnpm e2e:docker` (or `node tools/e2e-docker.mjs`).
  * Prerequisite: the image must exist — build it first with
- * `docker build -t labyrinth-game:dev .` (override via E2E_DOCKER_IMAGE).
+ * `docker build -t echowake:dev .` (override via E2E_DOCKER_IMAGE).
  *
  * What it proves (docs/CONTRACTS.md "Deployment (public dedicated server)"):
  *
@@ -34,9 +34,9 @@ import { chromium } from "playwright-core";
 
 const execFileP = promisify(execFile);
 
-const IMAGE = process.env.E2E_DOCKER_IMAGE ?? "labyrinth-game:dev";
+const IMAGE = process.env.E2E_DOCKER_IMAGE ?? "echowake:dev";
 const HOST_PORT = Number(process.env.E2E_DOCKER_PORT ?? 8098);
-const CONTAINER = `labyrinth-e2e-docker-${process.pid}`;
+const CONTAINER = `echowake-e2e-docker-${process.pid}`;
 const BASE_URL = `http://127.0.0.1:${HOST_PORT}`;
 /** docker stop grace period (s); a graceful exit must beat it by a wide margin. */
 const STOP_GRACE_S = 10;

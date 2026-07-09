@@ -6,7 +6,7 @@ import {
   cellIndex,
   inBounds,
   type Maze,
-} from "@labyrinth/common";
+} from "@echowake/common";
 
 /**
  * Whether a wall separates cell (x, y) from the 4-adjacent cell (nx, ny).

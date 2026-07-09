@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { MAX_PLAYERS_PER_SIZE, PROTOCOL_VERSION } from "@labyrinth/common";
+import { MAX_PLAYERS_PER_SIZE, PROTOCOL_VERSION } from "@echowake/common";
 import {
   decodeClientMessage,
   encodeMessage,
   type ClientMessage,
   type ErrorMsg,
   type ServerMessage,
-} from "@labyrinth/protocol";
+} from "@echowake/protocol";
 import type { WebSocket } from "ws";
 import type { Client } from "./client.js";
 import type { LobbyRegistry } from "./lobby.js";

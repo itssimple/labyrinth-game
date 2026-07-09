@@ -1,4 +1,4 @@
-import { FogState, Material, type FogStateId, type MaterialId } from "@labyrinth/common";
+import { FogState, Material, type FogStateId, type MaterialId } from "@echowake/common";
 
 /** World pixels per maze tile. */
 export const TILE_PX = 32;

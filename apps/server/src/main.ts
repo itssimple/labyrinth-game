@@ -1,7 +1,7 @@
 import { buildServer } from "./app.js";
 
 /**
- * Bootstrap: authoritative labyrinth game server. Fastify on PORT (default
+ * Bootstrap: authoritative Echowake game server. Fastify on PORT (default
  * 8080) with GET /healthz, GET /metrics, the game WebSocket at /ws, and the
  * built web client at / when CLIENT_DIST exists. Config is env-only — see
  * docs/DEPLOYMENT.md: PORT, HOST, CLIENT_DIST, LOG_LEVEL.
@@ -42,6 +42,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error("labyrinth server failed to start:", err);
+  console.error("echowake server failed to start:", err);
   process.exit(1);
 });

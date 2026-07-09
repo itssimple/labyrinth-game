@@ -1,5 +1,5 @@
 import { Container, Graphics } from "pixi.js";
-import type { PerceivedSound, SoundConfidence } from "@labyrinth/common";
+import type { PerceivedSound, SoundConfidence } from "@echowake/common";
 import { TILE_PX } from "./palette";
 
 interface RippleStyle {

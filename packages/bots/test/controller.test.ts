@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { MATCH_DURATION_S_PER_SIZE, TICK_RATE, cellIndex } from "@labyrinth/common";
-import { computeVisibleCells, createSimulation, type Simulation } from "@labyrinth/ecs";
-import { generateMaze } from "@labyrinth/mazegen";
+import { MATCH_DURATION_S_PER_SIZE, TICK_RATE, cellIndex } from "@echowake/common";
+import { computeVisibleCells, createSimulation, type Simulation } from "@echowake/ecs";
+import { generateMaze } from "@echowake/mazegen";
 import { createBotController, type BotObservation } from "../src/index.js";
 
 /** Build the observation a server would feed this bot before sim.step(). */

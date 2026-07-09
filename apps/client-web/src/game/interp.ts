@@ -1,5 +1,5 @@
-import { TICK_RATE } from "@labyrinth/common";
-import type { VisiblePlayerState } from "@labyrinth/protocol";
+import { TICK_RATE } from "@echowake/common";
+import type { VisiblePlayerState } from "@echowake/protocol";
 
 export interface Vec2 {
   x: number;

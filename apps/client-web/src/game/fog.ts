@@ -3,7 +3,7 @@ import {
   FOG_STALE_AFTER_S,
   FogState,
   type FogStateId,
-} from "@labyrinth/common";
+} from "@echowake/common";
 
 const NEVER = Number.NEGATIVE_INFINITY;
 

@@ -1,4 +1,4 @@
-import type { Maze, PerceivedSound } from "@labyrinth/common";
+import type { Maze, PerceivedSound } from "@echowake/common";
 import { FogMemory } from "./fog";
 import { Interpolator, RemotePlayers } from "./interp";
 

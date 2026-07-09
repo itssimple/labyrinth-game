@@ -7,7 +7,7 @@ import {
   cellIndex,
   type Cell,
   type GridPos,
-} from "@labyrinth/common";
+} from "@echowake/common";
 import type { Rng } from "./rand.js";
 
 /**

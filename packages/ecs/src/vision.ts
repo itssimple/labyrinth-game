@@ -1,5 +1,5 @@
-import { VISION_RADIUS, cellIndex, inBounds, type Maze } from "@labyrinth/common";
-import { distSq, gridLine } from "@labyrinth/math";
+import { VISION_RADIUS, cellIndex, inBounds, type Maze } from "@echowake/common";
+import { distSq, gridLine } from "@echowake/math";
 import { wallBetween } from "./walls.js";
 
 /**

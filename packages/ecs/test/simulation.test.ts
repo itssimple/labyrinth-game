@@ -1,4 +1,4 @@
-import { MOVE_SPEED, PLAYER_RADIUS, SOUND_INTENSITY, TICK_DT, WALL_E } from "@labyrinth/common";
+import { MOVE_SPEED, PLAYER_RADIUS, SOUND_INTENSITY, TICK_DT, WALL_E } from "@echowake/common";
 import { describe, expect, it } from "vitest";
 import { createSimulation, type PlayerInput, type Simulation } from "../src/index.js";
 import { addWall, makeOpenMaze } from "./helpers.js";

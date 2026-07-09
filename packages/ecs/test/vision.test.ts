@@ -1,4 +1,4 @@
-import { WALL_E, cellIndex } from "@labyrinth/common";
+import { WALL_E, cellIndex } from "@echowake/common";
 import { describe, expect, it } from "vitest";
 import { computeVisibleCells } from "../src/index.js";
 import { addWall, makeOpenMaze } from "./helpers.js";

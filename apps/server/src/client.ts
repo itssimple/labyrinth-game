@@ -1,4 +1,4 @@
-import type { ServerMessage } from "@labyrinth/protocol";
+import type { ServerMessage } from "@echowake/protocol";
 import type { Lobby } from "./lobby.js";
 
 /**

@@ -2,8 +2,8 @@
 
 This document fixes the API surface between packages so they can be developed
 independently. **Do not change a contract without updating this file and every
-consumer.** Shared types live in `@labyrinth/common` and
-`@labyrinth/protocol` — import them, never redeclare them.
+consumer.** Shared types live in `@echowake/common` and
+`@echowake/protocol` — import them, never redeclare them.
 
 Scope of the slice: Escape mode, 1–16 players, deterministic maze, fog of war
 with aging memory, visualized confidence-banded sound, authoritative server,
@@ -12,7 +12,7 @@ WebSocket transport. No combat, no items, no bots yet (all are TODOs).
 Positions are in **tile units** (floats); a player at (3.5, 2.5) stands at the
 center of cell (3, 2). Cells are row-major: `index = y * width + x`.
 
-## @labyrinth/math
+## @echowake/math
 
 Pure, dependency-free, fully deterministic. No `Math.random()`, no `Date`.
 
@@ -44,10 +44,10 @@ export function distSq(x0: number, y0: number, x1: number, y1: number): number;
 Tests must prove: same seed → same sequence; known-answer regression for one
 seed; gridLine symmetry and endpoint inclusion.
 
-## @labyrinth/mazegen
+## @echowake/mazegen
 
 ```ts
-import type { Maze, MazeGenOptions } from "@labyrinth/common";
+import type { Maze, MazeGenOptions } from "@echowake/common";
 
 /** Deterministic: deep-equal output for equal options. */
 export function generateMaze(options: MazeGenOptions): Maze;
@@ -68,14 +68,14 @@ Requirements:
 - Tests: same seed deep-equal; different seeds differ; full connectivity (BFS);
   wall consistency; correct dimensions per size.
 
-## @labyrinth/ecs
+## @echowake/ecs
 
 Deterministic fixed-tick simulation shared by server (authority) and any future
 client prediction/bots. bitECS preferred; a simple custom ECS is acceptable.
 No wall-clock time, no `Math.random()` — all randomness seeded.
 
 ```ts
-import type { Maze, PerceivedSound, RawSoundEvent } from "@labyrinth/common";
+import type { Maze, PerceivedSound, RawSoundEvent } from "@echowake/common";
 
 export interface PlayerInput { moveX: number; moveY: number; sprint: boolean; sneak: boolean }
 export interface PlayerState { x: number; y: number; escaped: boolean }
@@ -141,7 +141,7 @@ Simulation rules:
   ticks); wall collision (cannot cross a wall); vision blocked by walls;
   sound attenuation drops across walls; escape triggers.
 
-## @labyrinth/protocol
+## @echowake/protocol
 
 Message types already exist in `src/messages.ts` (do not redesign). Add
 `src/codec.ts`:
@@ -161,7 +161,7 @@ and echoed to all clients, so unbounded values are a DoS vector), reject
 unknown `type`, ensure numbers are finite, moveX/moveY ∈ {-1, 0, 1}. Tests:
 round-trip every message type; fuzz garbage inputs return null.
 
-## @labyrinth/bots
+## @echowake/bots
 
 Server-side AI players. **Bots use the same rules as players** (README): a bot
 occupies a normal simulation slot and acts ONLY by producing `PlayerInput` —
@@ -169,8 +169,8 @@ it must never mutate the simulation directly. Fully deterministic: same seed +
 maze + observation sequence => identical inputs (no Math.random/Date).
 
 ```ts
-import type { Maze, PerceivedSound } from "@labyrinth/common";
-import type { PlayerInput } from "@labyrinth/ecs";
+import type { Maze, PerceivedSound } from "@echowake/common";
+import type { PlayerInput } from "@echowake/ecs";
 
 /** What a bot is allowed to know each tick — the same view a human client gets. */
 export interface BotObservation {
@@ -215,7 +215,7 @@ Behavior v1 (keep simple, it's a testing partner, not a challenge):
   when fed real computeVisibleCells observations; never emits values outside
   the PlayerInput contract.
 
-## @labyrinth/server (apps/server)
+## @echowake/server (apps/server)
 
 Fastify on port **8080** (`PORT` env overrides): `GET /healthz` → `{ ok: true }`;
 WebSocket at `/ws` via @fastify/websocket.
@@ -233,7 +233,7 @@ Bots: host-only `addBot` adds an AI player (server assigns playerId + botName;
 reject beyond MAX_PLAYERS with `lobbyFull`); host-only `removeBot` removes one
 (`badMessage` if the id isn't a bot in this lobby). Bots appear in lobbyState
 with `isBot: true`, count toward MAX_PLAYERS_PER_SIZE at startMatch, get sim
-slots in roster order, and are driven each tick by @labyrinth/bots controllers
+slots in roster order, and are driven each tick by @echowake/bots controllers
 fed the same per-player view humans get (computeVisibleCells + perceiveSound
 with the secret jitter salt) BEFORE sim.step(). Bots appear in snapshots'
 visiblePlayers and emit sounds like anyone else. Their escapes join
@@ -241,7 +241,7 @@ matchEnd.escaped. Match end/abort conditions consider HUMAN players only —
 bots never keep a match alive (all humans escaped => allEscaped even if bots
 remain; all humans gone => abort). Bots are removed from the lobby only by
 removeBot or lobby deletion, and persist across matches.
-`startMatch` must also enforce `MAX_PLAYERS_PER_SIZE` from @labyrinth/common:
+`startMatch` must also enforce `MAX_PLAYERS_PER_SIZE` from @echowake/common:
 if the lobby has more players than the chosen size allows, reply
 `error: "tooManyPlayersForSize"` and do not start.
 Per tick: apply latest input per player (server clamps values; stale/absent
@@ -255,10 +255,10 @@ returns to pre-match state. Disconnects remove the player. Chat broadcasts to
 the lobby, sanitized.
 
 The interval loop is transport pacing only — all game logic stays inside
-`@labyrinth/ecs`. Keep files small: `main.ts`, `lobby.ts`, `match.ts`,
+`@echowake/ecs`. Keep files small: `main.ts`, `lobby.ts`, `match.ts`,
 `connection.ts` or similar.
 
-## @labyrinth/client-web (apps/client-web)
+## @echowake/client-web (apps/client-web)
 
 React shell (screens) + PixiJS canvas (game). React never owns gameplay state.
 

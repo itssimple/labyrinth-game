@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createRng, hashString } from "../src/rand.js";
 
 // TODO(integration): these cover the private fallback; keep them (or move to
-// @labyrinth/math) when src/rand.ts switches over.
+// @echowake/math) when src/rand.ts switches over.
 describe("rand fallback", () => {
   it("same seed yields identical sequences", () => {
     const a = createRng("seed");

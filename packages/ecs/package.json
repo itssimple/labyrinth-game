@@ -1,5 +1,5 @@
 {
-  "name": "@labyrinth/ecs",
+  "name": "@echowake/ecs",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,12 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@labyrinth/common": "workspace:*",
-    "@labyrinth/math": "workspace:*",
+    "@echowake/common": "workspace:*",
+    "@echowake/math": "workspace:*",
     "bitecs": "^0.3.40"
   },
   "devDependencies": {
-    "@labyrinth/mazegen": "workspace:*",
+    "@echowake/mazegen": "workspace:*",
     "typescript": "^5.7.2",
     "vitest": "^3.0.0"
   }

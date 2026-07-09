@@ -1,4 +1,4 @@
-import type { MazeGenOptions, PerceivedSound } from "@labyrinth/common";
+import type { MazeGenOptions, PerceivedSound } from "@echowake/common";
 
 /**
  * Wire protocol v1: JSON messages over WebSocket, discriminated on `type`.

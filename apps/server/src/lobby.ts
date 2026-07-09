@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { botName } from "@labyrinth/bots";
-import { MAX_PLAYERS } from "@labyrinth/common";
-import type { LobbyStateMsg, ServerMessage } from "@labyrinth/protocol";
+import { botName } from "@echowake/bots";
+import { MAX_PLAYERS } from "@echowake/common";
+import type { LobbyStateMsg, ServerMessage } from "@echowake/protocol";
 import type { Client } from "./client.js";
 import type { Match } from "./match.js";
 

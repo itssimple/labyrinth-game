@@ -1,4 +1,4 @@
-import { WALL_E, WALL_N, WALL_S, WALL_W, cellIndex, type Cell } from "@labyrinth/common";
+import { WALL_E, WALL_N, WALL_S, WALL_W, cellIndex, type Cell } from "@echowake/common";
 import type { Rng } from "./rand.js";
 
 /** The four cardinal directions with their wall bit and the neighbor's opposite bit. */

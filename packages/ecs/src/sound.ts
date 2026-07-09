@@ -5,8 +5,8 @@ import {
   type PerceivedSound,
   type RawSoundEvent,
   type SoundConfidence,
-} from "@labyrinth/common";
-import { clamp, createRng } from "@labyrinth/math";
+} from "@echowake/common";
+import { clamp, createRng } from "@echowake/math";
 import {
   SOUND_FALLOFF_PER_TILE,
   SOUND_JITTER_TILES,

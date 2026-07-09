@@ -27,7 +27,7 @@ export function MenuScreen({ session, ui }: { session: GameSession; ui: UiState 
   return (
     <div className="screen">
       <div className="panel">
-        <h1 className="title">LABYRINTH</h1>
+        <h1 className="title">ECHOWAKE</h1>
         <p className="subtitle">escape the maze — sound is vision</p>
         <label className="field">
           name

@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
-import { PROTOCOL_VERSION } from "@labyrinth/common";
+import { PROTOCOL_VERSION } from "@echowake/common";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { handleConnection } from "./connection.js";
 import { LobbyRegistry } from "./lobby.js";

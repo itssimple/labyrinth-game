@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FOG_RECENT_AFTER_S, FOG_STALE_AFTER_S, FogState } from "@labyrinth/common";
+import { FOG_RECENT_AFTER_S, FOG_STALE_AFTER_S, FogState } from "@echowake/common";
 import { FogMemory } from "./fog";
 
 describe("FogMemory", () => {

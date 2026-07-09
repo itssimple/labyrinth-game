@@ -1,8 +1,9 @@
-# Labyrinth Game
+# Echowake
 
-> Working title
+> Release name (formerly working title "Labyrinth Game"). Chosen for the
+> signature mechanic: sound leaves a visible wake — an echo — through the maze.
 
-Labyrinth Game is a multiplayer-first procedural labyrinth exploration game inspired by stealth games, horror games, old-school pixel games, and social deduction.
+Echowake is a multiplayer-first procedural labyrinth exploration game inspired by stealth games, horror games, old-school pixel games, and social deduction.
 
 The project is intended to be developed almost entirely with AI-assisted programming while remaining maintainable, well-documented, deterministic, and easy for humans to extend.
 
@@ -25,8 +26,8 @@ Prerequisites: Node.js >= 20 and pnpm 10 (`corepack enable` gets you pnpm).
 ```bash
 pnpm install                                # once, from the repo root
 
-pnpm --filter @labyrinth/server dev         # terminal 1: game server on ws://localhost:8080
-pnpm --filter @labyrinth/client-web dev     # terminal 2: web client on http://localhost:5173
+pnpm --filter @echowake/server dev         # terminal 1: game server on ws://localhost:8080
+pnpm --filter @echowake/client-web dev     # terminal 2: web client on http://localhost:5173
 ```
 
 Open http://localhost:5173, enter a name, and **Host game**.

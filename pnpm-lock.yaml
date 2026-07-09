@@ -20,19 +20,19 @@ importers:
 
   apps/client-web:
     dependencies:
-      '@labyrinth/common':
+      '@echowake/common':
         specifier: workspace:*
         version: link:../../packages/common
-      '@labyrinth/ecs':
+      '@echowake/ecs':
         specifier: workspace:*
         version: link:../../packages/ecs
-      '@labyrinth/math':
+      '@echowake/math':
         specifier: workspace:*
         version: link:../../packages/math
-      '@labyrinth/mazegen':
+      '@echowake/mazegen':
         specifier: workspace:*
         version: link:../../packages/mazegen
-      '@labyrinth/protocol':
+      '@echowake/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       pixi.js:
@@ -66,30 +66,30 @@ importers:
 
   apps/server:
     dependencies:
+      '@echowake/bots':
+        specifier: workspace:*
+        version: link:../../packages/bots
+      '@echowake/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@echowake/ecs':
+        specifier: workspace:*
+        version: link:../../packages/ecs
+      '@echowake/math':
+        specifier: workspace:*
+        version: link:../../packages/math
+      '@echowake/mazegen':
+        specifier: workspace:*
+        version: link:../../packages/mazegen
+      '@echowake/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@fastify/static':
         specifier: ^9.3.0
         version: 9.3.0
       '@fastify/websocket':
         specifier: ^11.0.0
         version: 11.3.0
-      '@labyrinth/bots':
-        specifier: workspace:*
-        version: link:../../packages/bots
-      '@labyrinth/common':
-        specifier: workspace:*
-        version: link:../../packages/common
-      '@labyrinth/ecs':
-        specifier: workspace:*
-        version: link:../../packages/ecs
-      '@labyrinth/math':
-        specifier: workspace:*
-        version: link:../../packages/math
-      '@labyrinth/mazegen':
-        specifier: workspace:*
-        version: link:../../packages/mazegen
-      '@labyrinth/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
       fastify:
         specifier: ^5.2.0
         version: 5.10.0
@@ -112,17 +112,17 @@ importers:
 
   packages/bots:
     dependencies:
-      '@labyrinth/common':
+      '@echowake/common':
         specifier: workspace:*
         version: link:../common
-      '@labyrinth/ecs':
+      '@echowake/ecs':
         specifier: workspace:*
         version: link:../ecs
-      '@labyrinth/math':
+      '@echowake/math':
         specifier: workspace:*
         version: link:../math
     devDependencies:
-      '@labyrinth/mazegen':
+      '@echowake/mazegen':
         specifier: workspace:*
         version: link:../mazegen
       typescript:
@@ -143,17 +143,17 @@ importers:
 
   packages/ecs:
     dependencies:
-      '@labyrinth/common':
+      '@echowake/common':
         specifier: workspace:*
         version: link:../common
-      '@labyrinth/math':
+      '@echowake/math':
         specifier: workspace:*
         version: link:../math
       bitecs:
         specifier: ^0.3.40
         version: 0.3.40
     devDependencies:
-      '@labyrinth/mazegen':
+      '@echowake/mazegen':
         specifier: workspace:*
         version: link:../mazegen
       typescript:
@@ -174,10 +174,10 @@ importers:
 
   packages/mazegen:
     dependencies:
-      '@labyrinth/common':
+      '@echowake/common':
         specifier: workspace:*
         version: link:../common
-      '@labyrinth/math':
+      '@echowake/math':
         specifier: workspace:*
         version: link:../math
     devDependencies:
@@ -190,7 +190,7 @@ importers:
 
   packages/protocol:
     dependencies:
-      '@labyrinth/common':
+      '@echowake/common':
         specifier: workspace:*
         version: link:../common
     devDependencies:

@@ -1,5 +1,5 @@
-import type { ClientMessage, ServerMessage } from "@labyrinth/protocol";
-import { decodeServerMessage, encodeMessage } from "@labyrinth/protocol";
+import type { ClientMessage, ServerMessage } from "@echowake/protocol";
+import { decodeServerMessage, encodeMessage } from "@echowake/protocol";
 import { resolveServerUrl, SERVER_URL_STORAGE_KEY } from "./serverUrl";
 
 export type SocketStatus = "connecting" | "open" | "closed";

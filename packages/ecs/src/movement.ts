@@ -7,8 +7,8 @@ import {
   cellIndex,
   inBounds,
   type Maze,
-} from "@labyrinth/common";
-import { clamp } from "@labyrinth/math";
+} from "@echowake/common";
+import { clamp } from "@echowake/math";
 
 const EPS = 1e-9;
 

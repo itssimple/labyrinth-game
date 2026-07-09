@@ -9,7 +9,7 @@ import {
   cellIndex,
   type Maze,
   type MazeSize,
-} from "@labyrinth/common";
+} from "@echowake/common";
 import { generateMaze } from "../src/index.js";
 
 const SIZES = Object.keys(MAZE_DIMENSIONS) as MazeSize[];

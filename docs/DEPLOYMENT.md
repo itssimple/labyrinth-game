@@ -9,8 +9,8 @@ single container is the whole game. The contract behind this document lives in
 From the repo root:
 
 ```sh
-docker build -t labyrinth-game .
-docker run -p 8080:8080 labyrinth-game
+docker build -t echowake .
+docker run -p 8080:8080 echowake
 ```
 
 That's it — the playable game is now at `http://localhost:8080`.
@@ -28,7 +28,7 @@ Notes:
   precompile to plain JS and run `node` directly.
 - Building behind a TLS-intercepting egress proxy? Pass the proxy CA as a
   BuildKit secret (never baked into the image):
-  `docker build --secret id=extra-ca,src=/path/to/ca.pem -t labyrinth-game .`
+  `docker build --secret id=extra-ca,src=/path/to/ca.pem -t echowake .`
 
 ## Environment variables
 
@@ -44,7 +44,7 @@ Config is env-only. All are optional.
 Example:
 
 ```sh
-docker run -p 80:8080 -e LOG_LEVEL=warn labyrinth-game
+docker run -p 80:8080 -e LOG_LEVEL=warn echowake
 ```
 
 ## How players connect
@@ -64,7 +64,7 @@ enter the server address manually in the main menu "server" field.
 | Route      | Purpose                                                                                                   |
 | ---------- | --------------------------------------------------------------------------------------------------------- |
 | `/`        | Built web client (only when `CLIENT_DIST` exists).                                                         |
-| `/ws`      | Game WebSocket (see `@labyrinth/protocol`).                                                                |
+| `/ws`      | Game WebSocket (see `@echowake/protocol`).                                                                |
 | `/healthz` | Liveness: `{ "ok": true }`.                                                                                |
 | `/metrics` | Ops counters as JSON: `{ uptimeS, lobbies, players, botsInLobbies, runningMatches, protocolVersion }`. TODO: Prometheus exposition format. |
 

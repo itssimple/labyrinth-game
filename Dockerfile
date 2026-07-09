@@ -5,7 +5,7 @@
 # Building behind a TLS-intercepting egress proxy? Provide the proxy CA as a
 # BuildKit secret (it is only mounted during the network-using step, never
 # baked into the image):
-#   docker build --secret id=extra-ca,src=/path/to/ca.pem -t labyrinth-game .
+#   docker build --secret id=extra-ca,src=/path/to/ca.pem -t echowake .
 
 # ---- Stage 1: install workspace + build the web client ---------------------
 FROM node:22-alpine AS build
@@ -28,7 +28,7 @@ RUN --mount=type=secret,id=extra-ca,target=/run/secrets/extra-ca.crt,required=fa
 
 # Deliberately NO VITE_SERVER_URL: the client then connects same-origin
 # (ws(s)://<host>/ws), i.e. back to this very container.
-RUN pnpm --filter @labyrinth/client-web build
+RUN pnpm --filter @echowake/client-web build
 
 # Self-contained server directory: package sources + node_modules with all
 # workspace deps copied in (they export TypeScript directly; tsx loads them).
@@ -41,7 +41,7 @@ RUN --mount=type=secret,id=extra-ca,target=/run/secrets/extra-ca.crt,required=fa
       export NODE_EXTRA_CA_CERTS=/run/secrets/extra-ca.crt; \
       export npm_config_cafile=/run/secrets/extra-ca.crt; \
     fi; \
-    pnpm --filter @labyrinth/server deploy --legacy /out/server
+    pnpm --filter @echowake/server deploy --legacy /out/server
 
 # ---- Stage 2: runtime -------------------------------------------------------
 FROM node:22-alpine

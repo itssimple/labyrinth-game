@@ -1,5 +1,5 @@
-import { PROTOCOL_VERSION, TICK_RATE, type MazeSize } from "@labyrinth/common";
-import { generateMaze } from "@labyrinth/mazegen";
+import { PROTOCOL_VERSION, TICK_RATE, type MazeSize } from "@echowake/common";
+import { generateMaze } from "@echowake/mazegen";
 import type {
   ClientMessage,
   LobbyStateMsg,
@@ -7,7 +7,7 @@ import type {
   MatchStartMsg,
   ServerMessage,
   SnapshotMsg,
-} from "@labyrinth/protocol";
+} from "@echowake/protocol";
 import { UiStore, type ChatEntry } from "../app/store";
 import { InputTracker } from "../game/input";
 import { GameRenderer } from "../game/renderer";

@@ -9,7 +9,7 @@ import {
   type Cell,
   type GridPos,
   type Maze,
-} from "@labyrinth/common";
+} from "@echowake/common";
 
 /**
  * Hand-crafted open-field maze: border walls only, Stone everywhere.
