@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { MAX_HP } from "@echowake/common";
 import type { GameSession } from "../net/session";
-import type { UiState } from "../app/store";
+import type { HudView, UiState } from "../app/store";
+import { itemColorCss, itemInitial, itemName } from "../game/items";
 import { VolumeControl } from "./VolumeControl";
 
 /** Formats whole seconds as m:ss. */
@@ -13,6 +15,38 @@ function fmtTime(s: number): string {
 /** Smoothed RTT for the HUD; em dash until the first pong lands. */
 function fmtPing(pingMs: number | null): string {
   return pingMs === null ? "— ms" : `${Math.round(pingMs)} ms`;
+}
+
+/** HP bar + 4 inventory slot boxes (1-4 select/use, Q drops the highlight). */
+function CombatHud({ hud }: { hud: HudView }) {
+  const frac = Math.max(0, Math.min(1, hud.hp / MAX_HP));
+  return (
+    <div className="combat-hud">
+      <div className="hp-bar" title={`HP ${hud.hp}/${MAX_HP}`}>
+        {/* green -> red as hp drains (hue 120 -> 0) */}
+        <div
+          className="fill"
+          style={{ width: `${frac * 100}%`, background: `hsl(${Math.round(frac * 120)}, 75%, 45%)` }}
+        />
+      </div>
+      <div className="inv">
+        {hud.inventory.map((id, i) => (
+          <div
+            key={i}
+            className={`inv-slot${i === hud.selectedSlot ? " selected" : ""}`}
+            title={id !== null ? itemName(id) : `slot ${i + 1} (empty)`}
+          >
+            <span className="slot-num">{i + 1}</span>
+            {id !== null && (
+              <span className="slot-letter" style={{ color: itemColorCss(id) }}>
+                {itemInitial(id)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -87,11 +121,18 @@ export function GameScreen({ session, ui }: { session: GameSession; ui: UiState 
         <span className="ping">{fmtPing(ui.pingMs)}</span>
         <span className="fps">{ui.fps !== null ? `${ui.fps} fps` : ""}</span>
         <span style={{ marginLeft: "auto", color: "#666680", fontSize: 11 }}>
-          WASD move · Shift sprint · Ctrl/C sneak · Enter chat · Tab players
+          WASD move · Shift sprint · Ctrl/C sneak · Space/click attack · 1-4 items · Q drop ·
+          Enter chat · Tab players
         </span>
         <VolumeControl audio={session.audio} compact />
       </div>
+      {ui.hud !== null && <CombatHud hud={ui.hud} />}
+      {/* Keyed remount restarts the CSS flash animation on every hp drop. */}
+      {ui.hud !== null && ui.hud.hpFlashSeq > 0 && (
+        <div key={ui.hud.hpFlashSeq} className="hp-flash" />
+      )}
       {ui.hud?.escaped === true && <div className="escaped-banner">ESCAPED!</div>}
+      {ui.hud?.dead === true && <div className="eliminated-banner">ELIMINATED</div>}
       {rosterOpen && !chatOpen && (
         <div className="roster-overlay">
           <div className="roster-title">players</div>

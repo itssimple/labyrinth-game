@@ -1,6 +1,7 @@
 import type { Maze, PerceivedSound } from "@echowake/common";
 import { FogMemory } from "./fog";
 import { Interpolator, RemotePlayers } from "./interp";
+import { ItemMemory } from "./items";
 
 /**
  * Plain-TS state for one running match, owned by GameSession and read by the
@@ -11,6 +12,8 @@ export interface MatchView {
   readonly endTick: number;
   readonly spawnIndex: number;
   readonly fog: FogMemory;
+  /** Floor-item memory: live items + remembered ghosts ("knowledge ages"). */
+  readonly items: ItemMemory;
   readonly you: Interpolator;
   readonly others: RemotePlayers;
   /** Perceived sounds not yet turned into ripples (drained by the renderer). */
@@ -32,6 +35,7 @@ export function createMatchView(maze: Maze, endTick: number, spawnIndex: number)
     endTick,
     spawnIndex,
     fog: new FogMemory(maze.width * maze.height),
+    items: new ItemMemory(maze.width),
     you,
     others: new RemotePlayers(),
     soundQueue: [],

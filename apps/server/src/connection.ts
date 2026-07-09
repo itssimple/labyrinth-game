@@ -166,6 +166,12 @@ export function handleConnection(socket: WebSocket, registry: LobbyRegistry): vo
         c.lobby?.match?.handleInput(c, msg);
         return;
       }
+      case "action": {
+        // Discrete in-match actions (attack/use/drop). Like input: silently
+        // ignored outside a match; the match validates seq and buffers it.
+        c.lobby?.match?.handleAction(c, msg);
+        return;
+      }
       case "addBot": {
         const lobby = c.lobby;
         if (!lobby) {

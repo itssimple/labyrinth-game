@@ -1,6 +1,13 @@
-import { PROTOCOL_VERSION, TICK_RATE, type MazeSize } from "@echowake/common";
+import {
+  INVENTORY_SLOTS,
+  MAX_HP,
+  PROTOCOL_VERSION,
+  TICK_RATE,
+  type MazeSize,
+} from "@echowake/common";
 import { generateMaze } from "@echowake/mazegen";
 import type {
+  ActionMsg,
   ClientMessage,
   LobbyStateMsg,
   MatchEndMsg,
@@ -8,9 +15,10 @@ import type {
   ServerMessage,
   SnapshotMsg,
 } from "@echowake/protocol";
-import { UiStore, type ChatEntry } from "../app/store";
+import { UiStore, type ChatEntry, type HudView } from "../app/store";
 import { AudioEngine } from "../audio/engine";
 import { FootstepCadence, type MoveMode } from "../audio/spatial";
+import { dropSlotIndex, hpDropped, pressSlot } from "../game/hud";
 import { InputTracker } from "../game/input";
 import { GameRenderer } from "../game/renderer";
 import { createMatchView, type MatchView } from "../game/state";
@@ -20,6 +28,8 @@ import { GameSocket, serverUrl, type SocketStatus } from "./socket";
 
 const LOBBY_CODE_RE = /^[A-Za-z]{4}$/;
 const CHAT_KEEP = 50;
+/** Slot index per digit key (1-4 -> inventory slots 0-3). */
+const DIGIT_SLOT: Record<string, number> = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3 };
 /** Hard cap on queued-but-unrendered sounds (hidden tabs stop draining). */
 const SOUND_QUEUE_MAX = 64;
 
@@ -44,11 +54,22 @@ export class GameSession {
   private inputTimer: ReturnType<typeof setInterval> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private inputSeq = 0;
+  /** ActionMsg gets its own seq stream (the server validates it like input's). */
+  private actionSeq = 0;
   private chatSeq = 0;
   private readonly nameById = new Map<string, string>();
   /** Own-footstep bookkeeping (audio only): cadence + last snapshot position. */
   private readonly footsteps = new FootstepCadence();
   private lastYou: { x: number; y: number } | null = null;
+  /** Removes the canvas left-click=attack listener installed by mountGame. */
+  private detachPointer: (() => void) | null = null;
+
+  constructor() {
+    // Discrete action keys (1-4 use/select, Q drop, Space attack) come from
+    // the InputTracker, which already goes dead while the chat overlay is
+    // open — game keys never fire into an open chat.
+    this.keyboard.onAction = (code) => this.onActionKey(code);
+  }
 
   // -- intents from React ---------------------------------------------------
 
@@ -268,6 +289,7 @@ export class GameSession {
     const maze = generateMaze(msg.options);
     this.match = createMatchView(maze, msg.endTick, msg.yourSpawnIndex);
     this.inputSeq = 0;
+    this.actionSeq = 0;
     this.footsteps.reset();
     this.lastYou = null;
     this.keyboard.enabled = true;
@@ -275,7 +297,15 @@ export class GameSession {
       screen: "game",
       matchResult: null,
       chat: [],
-      hud: { remainingS: Math.ceil(msg.endTick / TICK_RATE), escaped: false },
+      hud: {
+        remainingS: Math.ceil(msg.endTick / TICK_RATE),
+        escaped: false,
+        hp: MAX_HP,
+        dead: false,
+        inventory: new Array<string | null>(INVENTORY_SLOTS).fill(null),
+        selectedSlot: 0,
+        hpFlashSeq: 0,
+      },
       error: null,
     });
     this.startInputLoop();
@@ -289,6 +319,7 @@ export class GameSession {
     match.you.push(msg.you.x, msg.you.y, recvMs);
     match.others.update(msg.visiblePlayers, msg.tick, recvMs);
     match.fog.update(msg.visibleCells, msg.tick / TICK_RATE);
+    match.items.update(msg.visibleItems, msg.visibleCells);
     match.fogDirty = true;
     if (msg.sounds.length > 0) {
       // Bound the queue: a hidden tab pauses the renderer (rAF) while
@@ -303,10 +334,39 @@ export class GameSession {
     this.hearOwnFootsteps(msg.you);
 
     const remainingS = Math.max(0, Math.ceil((match.endTick - msg.tick) / TICK_RATE));
-    const hud = this.store.get().hud;
-    if (hud === null || hud.remainingS !== remainingS || hud.escaped !== match.escaped) {
-      this.store.set({ hud: { remainingS, escaped: match.escaped } });
+    this.syncHud(msg, remainingS, match.escaped);
+  }
+
+  /** Pushes snapshot-derived HUD state to the store (only when it changed). */
+  private syncHud(msg: SnapshotMsg, remainingS: number, escaped: boolean): void {
+    const prev = this.store.get().hud;
+    const flash = hpDropped(prev?.hp ?? null, msg.you.hp);
+    const invChanged =
+      prev === null ||
+      prev.inventory.length !== msg.inventory.length ||
+      msg.inventory.some((id, i) => id !== prev.inventory[i]);
+    if (
+      prev !== null &&
+      !flash &&
+      !invChanged &&
+      prev.remainingS === remainingS &&
+      prev.escaped === escaped &&
+      prev.hp === msg.you.hp &&
+      prev.dead === msg.you.dead
+    ) {
+      return;
     }
+    this.store.set({
+      hud: {
+        remainingS,
+        escaped,
+        hp: msg.you.hp,
+        dead: msg.you.dead,
+        inventory: [...msg.inventory],
+        selectedSlot: prev?.selectedSlot ?? 0,
+        hpFlashSeq: (prev?.hpFlashSeq ?? 0) + (flash ? 1 : 0),
+      },
+    });
   }
 
   /**
@@ -334,8 +394,58 @@ export class GameSession {
       matchResult: {
         reason: msg.reason,
         escaped: msg.escaped.map((id) => ({ id, name: this.nameById.get(id) ?? "???" })),
+        eliminated: msg.eliminated.map((id) => ({ id, name: this.nameById.get(id) ?? "???" })),
       },
     });
+  }
+
+  // -- discrete actions (attack / use / drop) --------------------------------
+
+  /**
+   * Attack intent (Space or canvas left-click). Sends the ActionMsg and plays
+   * your own swing locally for responsiveness (the server never echoes your
+   * own sounds back) — the server stays authoritative about whether it hits.
+   */
+  attack(): void {
+    if (!this.keyboard.enabled) return; // chat overlay open: game keys are dead
+    if (this.activeHud() === null) return;
+    this.sendAction("attack");
+    this.audio.playOwnSwing();
+  }
+
+  /** Key handler from the InputTracker (already muted while chat is open). */
+  private onActionKey(code: string): void {
+    if (code === "Space") {
+      this.attack();
+      return;
+    }
+    const hud = this.activeHud();
+    if (hud === null) return;
+    if (code === "KeyQ") {
+      const slot = dropSlotIndex(hud.inventory, hud.selectedSlot);
+      if (slot !== null) this.sendAction("drop", slot);
+      return;
+    }
+    const slot = DIGIT_SLOT[code];
+    if (slot === undefined || slot >= hud.inventory.length) return;
+    const press = pressSlot(hud.inventory, slot);
+    if (hud.selectedSlot !== press.select) {
+      this.store.set({ hud: { ...hud, selectedSlot: press.select } });
+    }
+    if (press.use) this.sendAction("use", slot);
+  }
+
+  /** The HUD, but only while actions are allowed: in-game, alive, not escaped. */
+  private activeHud(): HudView | null {
+    if (this.match === null || this.store.get().screen !== "game") return null;
+    const hud = this.store.get().hud;
+    return hud === null || hud.dead || hud.escaped ? null : hud;
+  }
+
+  private sendAction(action: ActionMsg["action"], slot?: number): void {
+    const msg: ActionMsg = { type: "action", seq: ++this.actionSeq, action };
+    if (slot !== undefined) msg.slot = slot;
+    this.socket?.send(msg);
   }
 
   // -- input loop (transport pacing only; gameplay stays server-side) --------
@@ -344,6 +454,8 @@ export class GameSession {
     this.stopInputLoop();
     this.inputTimer = setInterval(() => {
       if (this.match === null || this.store.get().screen !== "game") return;
+      // Eliminated: input is disabled (chat/Tab live outside the tracker).
+      if (this.store.get().hud?.dead === true) return;
       const sample = this.keyboard.read();
       this.socket?.send({ type: "input", seq: ++this.inputSeq, ...sample });
     }, 1000 / TICK_RATE);
@@ -381,6 +493,13 @@ export class GameSession {
     if (match === null) return;
     const token = ++this.mountToken;
     this.keyboard.attach();
+    // Left-click on the game canvas = attack (attack() re-checks chat/dead).
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button === 0) this.attack();
+    };
+    container.addEventListener("pointerdown", onPointerDown);
+    this.detachPointer?.();
+    this.detachPointer = () => container.removeEventListener("pointerdown", onPointerDown);
     const renderer = await GameRenderer.create(container, match, this.audio, {
       onFps: (fps) => this.store.set({ fps }),
     });
@@ -394,6 +513,8 @@ export class GameSession {
   /** Unmounts and destroys the Pixi renderer. */
   unmountGame(): void {
     this.mountToken++;
+    this.detachPointer?.();
+    this.detachPointer = null;
     this.keyboard.detach();
     this.keyboard.enabled = true;
     this.renderer?.destroy();

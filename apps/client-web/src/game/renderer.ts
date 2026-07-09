@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, type Ticker } from "pixi.js";
+import { Application, Container, Graphics, Text, type Ticker } from "pixi.js";
 import {
   cellIndex,
   FogState,
@@ -13,9 +13,19 @@ import {
 import type { AudioEngine } from "../audio/engine";
 import type { MatchView } from "./state";
 import { placeCompass } from "./compass";
+import { itemColor, itemInitial } from "./items";
 import { Minimap } from "./minimap";
 import { RippleField } from "./ripples";
-import { EXIT_COLOR, FLOOR_COLOR, FOG_OVERLAY, OTHER_COLOR, TILE_PX, WALL_COLOR, YOU_COLOR } from "./palette";
+import {
+  EXIT_COLOR,
+  FLOOR_COLOR,
+  FOG_OVERLAY,
+  ITEM_GHOST_ALPHA,
+  OTHER_COLOR,
+  TILE_PX,
+  WALL_COLOR,
+  YOU_COLOR,
+} from "./palette";
 
 const WALL_THICKNESS = 3;
 const FOG_REDRAW_MIN_MS = 90;
@@ -62,6 +72,23 @@ function drawMaze(floors: Graphics, walls: Graphics, exitG: Graphics, maze: Maze
     .stroke({ color: 0xd9ffe4, width: 2 });
 }
 
+/** Floor-item marker: a small kind-colored diamond with the item's initial. */
+function makeItemNode(itemId: string): Container {
+  const node = new Container();
+  const r = TILE_PX * 0.3;
+  const g = new Graphics();
+  g.poly([0, -r, r, 0, 0, r, -r, 0])
+    .fill(itemColor(itemId))
+    .stroke({ color: 0xffffff, width: 1.5, alpha: 0.8 });
+  const label = new Text({
+    text: itemInitial(itemId),
+    style: { fontFamily: "monospace", fontSize: 11, fontWeight: "bold", fill: 0x0a0a0f },
+  });
+  label.anchor.set(0.5);
+  node.addChild(g, label);
+  return node;
+}
+
 /**
  * PixiJS game renderer. Owns the Application, world layers, fog overlay,
  * ripples and minimap. Purely observes the MatchView each frame — it holds
@@ -74,6 +101,8 @@ export class GameRenderer {
   private readonly exitG = new Graphics();
   private readonly othersLayer = new Container();
   private readonly otherDots = new Map<string, Graphics>();
+  private readonly itemsLayer = new Container();
+  private readonly itemNodes = new Map<number, Container>();
   private readonly ripples = new RippleField();
   private readonly minimap: Minimap;
   /** Exit compass: screen-space HUD arrow, world-independent. */
@@ -118,8 +147,19 @@ export class GameRenderer {
       .stroke({ color: 0xd9ffe4, width: 1.5 });
     this.compassG.visible = false;
 
-    // Order: floors, exit, walls, players, fog, then ripples above the fog.
-    this.world.addChild(floors, this.exitG, walls, this.othersLayer, this.youG, this.fogG, this.ripples.container);
+    // Order: floors, exit, walls, items, players, fog, then ripples above the
+    // fog. Items sit under the fog overlay so remembered ghosts inherit the
+    // aging dimness of their cell ("knowledge ages").
+    this.world.addChild(
+      floors,
+      this.exitG,
+      walls,
+      this.itemsLayer,
+      this.othersLayer,
+      this.youG,
+      this.fogG,
+      this.ripples.container,
+    );
     this.minimap = new Minimap(match.maze);
     // HUD layer sits above the world: compass arrow, then the minimap.
     app.stage.addChild(this.world, this.compassG, this.minimap.container);
@@ -149,6 +189,7 @@ export class GameRenderer {
     this.exitG.alpha = 0.65 + 0.35 * Math.sin(nowMs / 280);
 
     this.syncOthers(nowMs);
+    this.syncItems();
 
     // New perceived sounds -> ripples; skip anything older than a second of
     // ticks (a hidden tab stops draining while snapshots keep arriving).
@@ -226,6 +267,30 @@ export class GameRenderer {
       if (!seen.has(id)) {
         dot.destroy();
         this.otherDots.delete(id);
+      }
+    }
+  }
+
+  /** Reconciles diamond markers for live floor items + remembered ghosts. */
+  private syncItems(): void {
+    const views = this.match.items.list();
+    const seen = new Set<number>();
+    for (const v of views) {
+      seen.add(v.id);
+      let node = this.itemNodes.get(v.id);
+      if (node === undefined) {
+        node = makeItemNode(v.item);
+        this.itemNodes.set(v.id, node);
+        this.itemsLayer.addChild(node);
+      }
+      node.position.set(v.x * TILE_PX, v.y * TILE_PX);
+      // Ghosts are dimmed on top of the fog overlay's own aging dimness.
+      node.alpha = v.ghost ? ITEM_GHOST_ALPHA : 1;
+    }
+    for (const [id, node] of this.itemNodes) {
+      if (!seen.has(id)) {
+        node.destroy({ children: true });
+        this.itemNodes.delete(id);
       }
     }
   }

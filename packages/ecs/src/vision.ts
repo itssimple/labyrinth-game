@@ -6,9 +6,10 @@ import { wallBetween } from "./walls.js";
  * Line of sight between two cells: walk the Bresenham line and fail on the
  * first wall crossing. A diagonal step passes only if at least one of its two
  * L-shaped detours (horizontal-then-vertical or vertical-then-horizontal) is
- * fully open — corners of walls block sight.
+ * fully open — corners of walls block sight. Also used by melee attacks
+ * (no hitting through walls).
  */
-function hasLineOfSight(maze: Maze, x0: number, y0: number, x1: number, y1: number): boolean {
+export function hasLineOfSight(maze: Maze, x0: number, y0: number, x1: number, y1: number): boolean {
   const pts = gridLine(x0, y0, x1, y1);
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1];

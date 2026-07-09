@@ -9,8 +9,11 @@
  *
  * 1. TWO-PLAYER: two isolated headless Chromium contexts — host lobby ->
  *    join by code -> start a tiny match -> hold W -> assert the match timer
- *    is counting down and the HUD ping indicator shows a real RTT number
- *    ("N ms"), collecting console errors from both pages.
+ *    is counting down, the HUD ping indicator shows a real RTT number
+ *    ("N ms"), and the combat HUD shows the HP bar + 4 inventory slots;
+ *    press Space (attack swing — a no-op miss is fine, real combat is
+ *    covered by server integration tests) and require zero console errors
+ *    from both pages.
  * 2. SOLO-WITH-BOT: a fresh context hosts a lobby, clicks "Add bot",
  *    asserts the roster shows 2 entries with a BOT tag, starts a small
  *    match, asserts the Pixi canvas + HUD timer countdown, and lets the
@@ -308,6 +311,29 @@ async function main() {
   const pingText = ((await pageA.locator(".hud .ping").textContent()) ?? "").trim();
   log(`alice's HUD ping shows a measured RTT: "${pingText}"`);
 
+  // 7c. Combat HUD (docs/CONTRACTS.md "Items, combat & auras"): the HP bar
+  //     and exactly INVENTORY_SLOTS (4) inventory slot boxes must be in the
+  //     HUD on an in-game page.
+  await pageA
+    .locator(".combat-hud .hp-bar")
+    .waitFor({ timeout: 10_000 })
+    .catch(() => {
+      throw new Error("alice's combat HUD never showed an HP bar (.combat-hud .hp-bar missing)");
+    });
+  const slotCount = await pageA.locator(".combat-hud .inv-slot").count();
+  if (slotCount !== 4) {
+    throw new Error(`alice's combat HUD shows ${slotCount} inventory slots, expected 4`);
+  }
+  log("combat HUD present: HP bar + 4 inventory slots");
+
+  // 7d. Space = attack. Swinging at nothing must be harmless (a swing sound /
+  //     no-op) — the console-error gate below fails the smoke if the action
+  //     path throws. Forcing a real fight in a browser is deliberately out of
+  //     scope here; hit/damage rules are covered by server integration tests.
+  await pageA.keyboard.press("Space");
+  await sleep(700); // let the action round-trip a few ticks
+  log("alice swung (Space) with no visible target — no crash");
+
   // 8. Console errors from the whole run fail the smoke.
   await sleep(500); // let any straggling errors land
   if (consoleErrors.length > 0) {
@@ -483,7 +509,8 @@ async function main() {
 
   console.log(
     `\nSMOKE PASS — two-player: lobby ${code}, 2 players joined, tiny match started on both pages, ` +
-      `timer counting down (${t0}s -> ${t1}s), HUD ping "${pingText}", zero console errors; ` +
+      `timer counting down (${t0}s -> ${t1}s), HUD ping "${pingText}", ` +
+      `combat HUD (HP bar + 4 slots) present, Space swing ok, zero console errors; ` +
       `solo-with-bot: lobby ${codeC}, roster 2 (1 BOT), small match ran ~4s, ` +
       `timer counting down (${s0}s -> ${s1}s), zero console errors; ` +
       `public-browser: lobby ${codeD} listed publicly, browser showed exactly 1 entry (host dave), ` +

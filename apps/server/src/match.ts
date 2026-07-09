@@ -9,15 +9,23 @@ import {
   type PerceivedSound,
   type RawSoundEvent,
 } from "@echowake/common";
+import { ITEM_DEFS } from "@echowake/content";
 import {
   computeVisibleCells,
   createSimulation,
   perceiveSound,
+  type PlayerAction,
   type Simulation,
 } from "@echowake/ecs";
 import { generateMaze } from "@echowake/mazegen";
 import { clamp } from "@echowake/math";
-import type { InputMsg, SnapshotMsg, VisiblePlayerState } from "@echowake/protocol";
+import type {
+  ActionMsg,
+  InputMsg,
+  SnapshotMsg,
+  VisibleItemState,
+  VisiblePlayerState,
+} from "@echowake/protocol";
 import type { Client } from "./client.js";
 import type { Lobby } from "./lobby.js";
 
@@ -32,7 +40,22 @@ interface MatchPlayer {
   lastSeq: number;
   /** Seq of the last input actually consumed by the simulation. */
   ackSeq: number;
+  /** Highest action seq received (stale/duplicate actions are dropped). */
+  lastActionSeq: number;
+  /**
+   * Validated actions awaiting the next tick. Multiple distinct actions per
+   * tick are fine (e.g. use a bandage AND drop something), but at most one
+   * attack is ever buffered — cooldowns can't be bypassed by spamming, and
+   * the simulation enforces the same rule as a second line of defense.
+   */
+  pendingActions: PlayerAction[];
 }
+
+/**
+ * Cap on buffered actions per player per tick — mirrors the simulation's own
+ * queue cap so a flood of use/drop messages can't grow memory between ticks.
+ */
+const MAX_PENDING_ACTIONS = 8;
 
 /** One AI player in this match: a normal sim slot driven by a controller. */
 interface MatchBot {
@@ -73,6 +96,8 @@ export class Match {
    */
   private prevSounds: readonly RawSoundEvent[] = [];
   private readonly escapedIds: string[] = [];
+  /** Player ids (humans AND bots) eliminated by combat, in death order. */
+  private readonly eliminatedIds: string[] = [];
   private interval: NodeJS.Timeout | null = null;
 
   /**
@@ -91,7 +116,9 @@ export class Match {
     this.jitterSeed = `${this.seed}#${randomUUID()}`;
     this.endTick = MATCH_DURATION_S_PER_SIZE[this.options.size] * TICK_RATE;
     this.maze = generateMaze(this.options);
-    this.sim = createSimulation({ maze: this.maze, seed: this.seed });
+    // Item definitions are injected here (content -> ecs, never the reverse):
+    // the simulation stays moddable while the stock server ships the v1 set.
+    this.sim = createSimulation({ maze: this.maze, seed: this.seed, items: ITEM_DEFS });
     for (const client of lobby.clients) {
       const slot = this.sim.addPlayer();
       this.players.set(client.playerId, {
@@ -100,6 +127,8 @@ export class Match {
         pending: null,
         lastSeq: -1,
         ackSeq: 0,
+        lastActionSeq: -1,
+        pendingActions: [],
       });
     }
     // Bots get sim slots after every human, in lobby roster order. They play
@@ -135,6 +164,22 @@ export class Match {
     p.pending = msg;
   }
 
+  /**
+   * Buffers a validated action for the next tick. Seq must advance
+   * monotonically (its own stream, independent of input seq) so replayed or
+   * reordered frames are dropped; at most one attack per tick is buffered —
+   * spamming attack cannot bypass weapon cooldowns (the sim enforces both
+   * the one-attack rule and the cooldown itself as well).
+   */
+  handleAction(client: Client, msg: ActionMsg): void {
+    const p = this.players.get(client.playerId);
+    if (!p || msg.seq <= p.lastActionSeq) return;
+    p.lastActionSeq = msg.seq;
+    if (p.pendingActions.length >= MAX_PENDING_ACTIONS) return;
+    if (msg.action === "attack" && p.pendingActions.some((a) => a.action === "attack")) return;
+    p.pendingActions.push({ action: msg.action, slot: msg.slot });
+  }
+
   /** Removes a disconnected/leaving player from the simulation and end-checks. */
   removePlayer(client: Client): void {
     const p = this.players.get(client.playerId);
@@ -146,7 +191,7 @@ export class Match {
       this.abort();
       return;
     }
-    this.checkAllEscaped();
+    this.checkHumansResolved();
   }
 
   /** Removes a bot's simulation slot when the host removes it mid-match. */
@@ -173,7 +218,7 @@ export class Match {
     // prevSounds): one tick of hearing latency, same as a human client.
     for (const bot of this.bots) {
       const state = this.sim.getPlayerState(bot.slot);
-      if (state.escaped) continue;
+      if (state.escaped || state.dead) continue; // the dead don't wander
       const visibleCells = computeVisibleCells(this.maze, state.x, state.y);
       const sounds: PerceivedSound[] = [];
       for (const raw of this.prevSounds) {
@@ -195,6 +240,8 @@ export class Match {
     }
 
     // Apply the latest validated input per player; absent = keep previous.
+    // Buffered actions are handed to the sim afterwards so an attack swings
+    // toward this tick's facing (facing derives from the same tick's input).
     for (const p of this.players.values()) {
       if (p.pending) {
         this.sim.setInput(p.slot, {
@@ -206,6 +253,8 @@ export class Match {
         p.ackSeq = p.pending.seq;
         p.pending = null;
       }
+      for (const action of p.pendingActions) this.sim.act(p.slot, action);
+      p.pendingActions.length = 0;
     }
 
     const result = this.sim.step();
@@ -218,8 +267,20 @@ export class Match {
         if (b.slot === slot) this.escapedIds.push(b.playerId);
       }
     }
+    // Combat deaths, in death order — humans and bots alike (a bot keeps its
+    // lobby playerId, so the match-end screen can name it).
+    for (const slot of result.deaths) {
+      for (const p of this.players.values()) {
+        if (p.slot === slot) this.eliminatedIds.push(p.client.playerId);
+      }
+      for (const b of this.bots) {
+        if (b.slot === slot) this.eliminatedIds.push(b.playerId);
+      }
+    }
 
     // Snapshot each player's world through their own vision + hearing only.
+    // Dead players are still snapshotted (their frozen view) until match end.
+    const floorItems = this.sim.listFloorItems();
     const states = [...this.players.values()].map((p) => ({
       p,
       state: this.sim.getPlayerState(p.slot),
@@ -234,7 +295,10 @@ export class Match {
       const visible = computeVisibleCells(this.maze, state.x, state.y);
       const visiblePlayers: VisiblePlayerState[] = [];
       for (const other of observable) {
-        if (other.playerId === p.client.playerId || other.state.escaped) continue;
+        // Escaped and dead players are out of the world — never rendered.
+        if (other.playerId === p.client.playerId || other.state.escaped || other.state.dead) {
+          continue;
+        }
         const cell = cellIndex(
           this.maze.width,
           Math.floor(other.state.x),
@@ -254,15 +318,22 @@ export class Match {
         const heard = perceiveSound(this.maze, this.jitterSeed, raw, state.x, state.y);
         if (heard) sounds.push(heard);
       }
+      // Floor items are only reported inside this client's line of sight —
+      // knowing where loot lies is knowledge, and knowledge must be earned.
+      const visibleItems: VisibleItemState[] = [];
+      for (const fi of floorItems) {
+        const cell = cellIndex(this.maze.width, Math.floor(fi.x), Math.floor(fi.y));
+        if (visible.has(cell)) {
+          visibleItems.push({ id: fi.id, item: fi.item, x: fi.x, y: fi.y });
+        }
+      }
       const snapshot: SnapshotMsg = {
         type: "snapshot",
         tick: result.tick,
         ackSeq: p.ackSeq,
-        // TODO(items round): hp/dead/inventory/visibleItems become real once
-        // @echowake/ecs exposes combat + item state (docs/CONTRACTS.md).
-        you: { x: state.x, y: state.y, escaped: state.escaped, hp: 100, dead: false },
-        inventory: [null, null, null, null],
-        visibleItems: [],
+        you: { x: state.x, y: state.y, escaped: state.escaped, hp: state.hp, dead: state.dead },
+        inventory: state.inventory,
+        visibleItems,
         visiblePlayers,
         visibleCells: [...visible],
         sounds,
@@ -270,18 +341,21 @@ export class Match {
       p.client.send(snapshot);
     }
 
-    if (this.checkAllEscaped()) return;
+    if (this.checkHumansResolved()) return;
     if (result.tick >= this.endTick) this.end("timeUp");
   }
 
   /**
-   * Ends the match if every still-connected HUMAN player has escaped. Bots
-   * are deliberately not consulted — they never keep a match alive.
+   * Ends the match if every still-connected HUMAN player is resolved —
+   * escaped OR dead. Bots are deliberately not consulted: they never keep a
+   * match alive. (Dead humans don't block the end either; they only spectate
+   * their frozen view until everyone else is done.)
    */
-  private checkAllEscaped(): boolean {
+  private checkHumansResolved(): boolean {
     if (this.interval === null || this.players.size === 0) return false;
     for (const p of this.players.values()) {
-      if (!this.sim.getPlayerState(p.slot).escaped) return false;
+      const state = this.sim.getPlayerState(p.slot);
+      if (!state.escaped && !state.dead) return false;
     }
     this.end("allEscaped");
     return true;
@@ -295,7 +369,7 @@ export class Match {
       type: "matchEnd",
       reason,
       escaped: [...this.escapedIds],
-      eliminated: [],
+      eliminated: [...this.eliminatedIds],
     });
     this.lobby.match = null;
     // Back to the pre-match lobby screen.

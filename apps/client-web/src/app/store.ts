@@ -22,12 +22,24 @@ export interface HudView {
   /** Whole seconds left until endTick (from ticks, not wall clock). */
   remainingS: number;
   escaped: boolean;
+  /** Your hit points from the latest snapshot (0..MAX_HP). */
+  hp: number;
+  /** True once eliminated — the HUD shows ELIMINATED and input goes dead. */
+  dead: boolean;
+  /** Inventory slot contents (item definition ids), null = empty. */
+  inventory: (string | null)[];
+  /** Slot highlighted in the HUD; keys 1-4 select, Q drops it. */
+  selectedSlot: number;
+  /** Increments every time hp drops — React keys the red edge flash off it. */
+  hpFlashSeq: number;
 }
 
 export interface MatchResultView {
   reason: "allEscaped" | "timeUp";
   /** Escape order, names resolved from the last lobby roster. */
   escaped: { id: string; name: string }[];
+  /** Combat eliminations in death order, names resolved the same way. */
+  eliminated: { id: string; name: string }[];
 }
 
 /** Coarse UI state — the ONLY game-adjacent data React ever sees. */

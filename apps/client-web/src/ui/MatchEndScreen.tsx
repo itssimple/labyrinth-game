@@ -22,6 +22,19 @@ export function MatchEndScreen({ session, ui }: { session: GameSession; ui: UiSt
         ) : (
           <p className="muted">nobody escaped the labyrinth…</p>
         )}
+        {result.eliminated.length > 0 && (
+          <>
+            <p className="subtitle">eliminated</p>
+            <ul className="result-list eliminated">
+              {result.eliminated.map((p) => (
+                <li key={p.id}>
+                  {p.name}
+                  {p.id === ui.selfId && <span className="host-tag">YOU</span>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         <button onClick={() => session.backToLobby()}>Back to lobby</button>
       </div>
     </div>

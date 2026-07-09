@@ -116,6 +116,21 @@ export class AudioEngine {
     this.play(kind, perceivedGain(SOUND_INTENSITY[kind]) * OWN_FOOTSTEP_SCALE, 0, null);
   }
 
+  /**
+   * Your own melee swing, played locally on the attack keypress for
+   * responsiveness (the server never echoes your own sounds back). Centered
+   * and scaled down like your own footsteps. Presentation only — whether the
+   * swing HITS remains entirely the server's call.
+   */
+  playOwnSwing(): void {
+    this.play(
+      "melee-swing",
+      perceivedGain(SOUND_INTENSITY["melee-swing"]) * OWN_FOOTSTEP_SCALE,
+      0,
+      null,
+    );
+  }
+
   /** Builds the per-sound chain: synth -> gain -> [lowpass] -> [pan] -> master. */
   private play(
     kind: PerceivedSound["kind"],

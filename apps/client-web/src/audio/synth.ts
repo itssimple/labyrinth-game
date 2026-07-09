@@ -136,6 +136,59 @@ function playExplosion(ctx: BaseAudioContext, dest: AudioNode): void {
   sub.stop(t0 + 1.0);
 }
 
+/** Melee swing: a whoosh — bandpassed noise whose center sweeps sharply up. */
+function playSwing(ctx: BaseAudioContext, dest: AudioNode): void {
+  const t0 = ctx.currentTime;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(ctx);
+  const filter = ctx.createBiquadFilter();
+  filter.type = "bandpass";
+  filter.Q.value = 2.2;
+  filter.frequency.setValueAtTime(jitterHz(420), t0);
+  filter.frequency.exponentialRampToValueAtTime(2300, t0 + 0.13);
+  src.connect(filter);
+  filter.connect(envelope(ctx, dest, t0, 0.55, 0.02, 0.14));
+  src.start(t0);
+  src.stop(t0 + 0.22);
+}
+
+/** Melee hit: a thud — low noise slap over a fast-dropping sine body. */
+function playHit(ctx: BaseAudioContext, dest: AudioNode): void {
+  const t0 = ctx.currentTime;
+  noiseBurst(ctx, dest, {
+    centerHz: 200,
+    q: 0.9,
+    peak: 0.9,
+    attackS: 0.003,
+    decayS: 0.11,
+    filterType: "lowpass",
+  });
+  const body = ctx.createOscillator();
+  body.type = "sine";
+  body.frequency.setValueAtTime(jitterHz(160), t0);
+  body.frequency.exponentialRampToValueAtTime(55, t0 + 0.09);
+  body.connect(envelope(ctx, dest, t0, 0.7, 0.004, 0.14));
+  body.start(t0);
+  body.stop(t0 + 0.2);
+}
+
+/** Pickup: a soft two-note chime (sine fifth-ish, gentle envelopes). */
+function playPickup(ctx: BaseAudioContext, dest: AudioNode): void {
+  const t0 = ctx.currentTime;
+  const notes: readonly [number, number][] = [
+    [880, 0],
+    [1318.5, 0.07],
+  ];
+  for (const [hz, delayS] of notes) {
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = hz;
+    osc.connect(envelope(ctx, dest, t0 + delayS, 0.22, 0.008, 0.22));
+    osc.start(t0 + delayS);
+    osc.stop(t0 + delayS + 0.3);
+  }
+}
+
 /** Synthesizes one SoundKind into `dest` (routing/pan/volume is the caller's). */
 export function playKind(ctx: BaseAudioContext, dest: AudioNode, kind: SoundKind): void {
   switch (kind) {
@@ -152,6 +205,15 @@ export function playKind(ctx: BaseAudioContext, dest: AudioNode, kind: SoundKind
       break;
     case "explosion":
       playExplosion(ctx, dest);
+      break;
+    case "melee-swing":
+      playSwing(ctx, dest);
+      break;
+    case "melee-hit":
+      playHit(ctx, dest);
+      break;
+    case "pickup":
+      playPickup(ctx, dest);
       break;
   }
 }

@@ -3,9 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { botName } from "@echowake/bots";
 import {
+  MAX_HP,
   MOVE_SPEED,
   PROTOCOL_VERSION,
   TICK_DT,
+  TICK_RATE,
   WALL_E,
   WALL_N,
   WALL_S,
@@ -13,7 +15,8 @@ import {
   cellIndex,
   type Maze,
 } from "@echowake/common";
-import { computeVisibleCells } from "@echowake/ecs";
+import { FISTS, ITEM_DEFS } from "@echowake/content";
+import { computeVisibleCells, createSimulation } from "@echowake/ecs";
 import { generateMaze } from "@echowake/mazegen";
 import {
   encodeMessage,
@@ -623,4 +626,261 @@ describe("bots", () => {
 
     host.client.close();
   }, 30000);
+});
+
+describe("items and combat", () => {
+  it("rejects malformed action messages at the codec boundary", async () => {
+    const p = await connectPlayer("Fumbler");
+    p.client.sendRaw(JSON.stringify({ type: "action", seq: 1, action: "teleport" }));
+    expect((await p.client.next("error")).code).toBe("badMessage");
+    p.client.sendRaw(JSON.stringify({ type: "action", seq: 2, action: "use", slot: 9 }));
+    expect((await p.client.next("error")).code).toBe("badMessage");
+    p.client.sendRaw(JSON.stringify({ type: "action", seq: "x", action: "attack" }));
+    expect((await p.client.next("error")).code).toBe("badMessage");
+    p.client.close();
+    await p.client.closed;
+  });
+
+  it("snapshots report floor items exactly when they are in line of sight", async () => {
+    // Search for a tiny seed where, from spawn 0, at least one floor item is
+    // visible AND at least one is hidden — the interesting case on both sides.
+    // Ground truth comes from a local simulation with the same maze/seed/defs:
+    // item spawning is deterministic, so it matches the server's exactly.
+    let found: {
+      seed: string;
+      truth: { id: number; item: string; x: number; y: number }[];
+    } | null = null;
+    for (let i = 0; i < 2000 && !found; i++) {
+      const seed = `items-itest-${i}`;
+      const maze = generateMaze({ seed, size: "tiny" });
+      const spawn = maze.spawns[0]!;
+      const vis = computeVisibleCells(maze, spawn.x + 0.5, spawn.y + 0.5);
+      const truth = createSimulation({ maze, seed, items: ITEM_DEFS }).listFloorItems();
+      const inLos = truth.filter((fi) =>
+        vis.has(cellIndex(maze.width, Math.floor(fi.x), Math.floor(fi.y))),
+      );
+      if (inLos.length > 0 && inLos.length < truth.length) found = { seed, truth };
+    }
+    expect(found).not.toBeNull();
+
+    const host = await connectPlayer("Looter");
+    host.client.send({ type: "createLobby" });
+    await host.client.next("lobbyState");
+    host.client.send({ type: "startMatch", options: { seed: found!.seed, size: "tiny" } });
+    const start = await host.client.next("matchStart");
+    expect(start.yourSpawnIndex).toBe(0);
+
+    const snap: SnapshotMsg = await host.client.next("snapshot");
+    // Combat state is live from tick 1.
+    expect(snap.you.hp).toBe(MAX_HP);
+    expect(snap.you.dead).toBe(false);
+    expect(snap.inventory).toEqual([null, null, null, null]);
+
+    // visibleItems must be EXACTLY the ground-truth floor items whose cell is
+    // in this client's visibleCells — nothing hidden leaks, nothing seen is
+    // missing (ids included: both sims assign them deterministically).
+    const visible = new Set(snap.visibleCells);
+    const maze = generateMaze(start.options);
+    const expected = found!.truth
+      .filter((fi) => visible.has(cellIndex(maze.width, Math.floor(fi.x), Math.floor(fi.y))))
+      .sort((a, b) => a.id - b.id);
+    const actual = [...snap.visibleItems].sort((a, b) => a.id - b.id);
+    expect(actual).toEqual(expected);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThan(found!.truth.length); // some stay hidden
+
+    host.client.close();
+    await host.client.closed;
+  });
+
+  it("melee combat: hp drops, cooldowns resist spam, death eliminates, dead spectate", async () => {
+    const seed = "combat-itest-1";
+    const attacker = await connectPlayer("Attacker");
+    const victim = await connectPlayer("Victim");
+    attacker.client.send({ type: "createLobby" });
+    const lobby = await attacker.client.next("lobbyState");
+    victim.client.send({ type: "joinLobby", code: lobby.code });
+    await victim.client.next("lobbyState");
+    await attacker.client.next("lobbyState");
+
+    attacker.client.send({ type: "startMatch", options: { seed, size: "tiny" } });
+    const startA: MatchStartMsg = await attacker.client.next("matchStart");
+    const startV: MatchStartMsg = await victim.client.next("matchStart");
+    expect(startA.yourSpawnIndex).toBe(0); // humans get slots in join order
+    expect(startV.yourSpawnIndex).toBe(1);
+
+    // Spawns 0 and 1 are farthest-point sampled (never adjacent), so drive the
+    // attacker to the idle victim along the BFS path of the regenerated maze.
+    const maze = generateMaze(startA.options);
+    const spawnA = maze.spawns[0]!;
+    const spawnV = maze.spawns[1]!;
+    const victimCell = cellIndex(maze.width, spawnV.x, spawnV.y);
+    let path = bfsPath(maze, cellIndex(maze.width, spawnA.x, spawnA.y), victimCell);
+    expect(path.length).toBeGreaterThan(0);
+
+    // The weakest weapon (fists) has the shortest cooldown, so consecutive
+    // observed hp drops can never be closer than this many ticks — no matter
+    // how hard the attacker spams "attack".
+    const minCooldownTicks = Math.round((FISTS.cooldownS ?? 0) * TICK_RATE);
+    expect(minCooldownTicks).toBeGreaterThan(1);
+
+    let inputSeq = 1;
+    let actionSeq = 1;
+    let lastHp = MAX_HP;
+    const hpEvents: { tick: number; hp: number }[] = [];
+    /** Reads one snapshot from each client (keeps both queues drained/paced). */
+    const readBoth = async (): Promise<{ a: SnapshotMsg; v: SnapshotMsg }> => {
+      const a: SnapshotMsg = await attacker.client.next("snapshot", 5000);
+      const v: SnapshotMsg = await victim.client.next("snapshot", 5000);
+      if (v.you.hp !== lastHp) {
+        hpEvents.push({ tick: v.tick, hp: v.you.hp });
+        lastHp = v.you.hp;
+      }
+      return { a, v };
+    };
+    const sendInput = (moveX: number, moveY: number, sprint: boolean): void => {
+      attacker.client.send({ type: "input", seq: inputSeq++, moveX, moveY, sprint, sneak: false });
+    };
+    /** Steer toward (tx, ty) with per-axis deadzone. */
+    const steer = (a: SnapshotMsg, tx: number, ty: number, deadzone: number, sprint: boolean) => {
+      const dx = tx - a.you.x;
+      const dy = ty - a.you.y;
+      sendInput(
+        Math.abs(dx) > deadzone ? Math.sign(dx) : 0,
+        Math.abs(dy) > deadzone ? Math.sign(dy) : 0,
+        sprint,
+      );
+    };
+
+    // Phase 1: sprint along the path and park at the CENTER of the cell next
+    // to the victim (open passage between them => in melee range, clear LOS).
+    // We deliberately never enter the victim's cell: with both players frozen
+    // and facing locked, hits become deterministic instead of oscillation luck.
+    const neighborCell = path.length >= 2
+      ? path[path.length - 2]!
+      : cellIndex(maze.width, spawnA.x, spawnA.y);
+    const parkX = (neighborCell % maze.width) + 0.5;
+    const parkY = Math.floor(neighborCell / maze.width) + 0.5;
+    let approach = path.slice(0, -1); // everything up to (excluding) the victim's cell
+    const walkDeadzone = MOVE_SPEED.walk * TICK_DT * 0.75;
+    const sprintDeadzone = MOVE_SPEED.sprint * TICK_DT * 0.75;
+    let parked = false;
+    for (let i = 0; i < 700 && !parked; i++) {
+      const { a } = await readBoth();
+      const cur = cellIndex(maze.width, Math.floor(a.you.x), Math.floor(a.you.y));
+      if (
+        cur === neighborCell &&
+        Math.abs(a.you.x - parkX) < walkDeadzone &&
+        Math.abs(a.you.y - parkY) < walkDeadzone
+      ) {
+        parked = true;
+        break;
+      }
+      const reached = approach.indexOf(cur);
+      if (reached !== -1) approach = approach.slice(reached + 1);
+      const target = approach[0] ?? neighborCell;
+      const tx = (target % maze.width) + 0.5;
+      const ty = Math.floor(target / maze.width) + 0.5;
+      // Sprint between cells, walk (tighter deadzone) to settle on the last one.
+      const sprint = target !== neighborCell;
+      steer(a, tx, ty, sprint ? sprintDeadzone : walkDeadzone, sprint);
+    }
+    expect(parked).toBe(true);
+    sendInput(0, 0, false); // freeze (in-flight steering drains within a tick)
+    await readBoth();
+
+    // Face-pulse + attack burst: one movement tick toward the victim locks the
+    // attacker's facing on them, then a frozen attack burst (one action every
+    // other tick — well inside the rate limit; cooldown >> 2 ticks anyway)
+    // must land a hit. Re-pulse each cycle in case in-flight drift misaligned.
+    let firstHit: { tick: number; hp: number } | null = null;
+    for (let cycle = 0; cycle < 8 && !firstHit; cycle++) {
+      let { a, v } = await readBoth();
+      steer(a, v.you.x, v.you.y, 0.05, false); // face the victim + creep closer
+      ({ a, v } = await readBoth());
+      sendInput(0, 0, false); // stop; facing stays on the victim
+      for (let i = 0; i < 30 && !firstHit; i++) {
+        ({ a, v } = await readBoth());
+        if (v.you.hp < MAX_HP) {
+          firstHit = { tick: v.tick, hp: v.you.hp };
+          break;
+        }
+        if (i % 2 === 0) {
+          attacker.client.send({ type: "action", seq: actionSeq++, action: "attack" });
+        }
+      }
+    }
+    expect(firstHit).not.toBeNull();
+
+    // Phase 2: stale/duplicate action seqs must be dropped — "attack" frames
+    // keep arriving for 40 ticks (far beyond any weapon cooldown, attacker
+    // still in melee range, facing the victim) yet hp must not move.
+    for (let i = 0; i < 40; i++) {
+      await readBoth();
+      if (i % 2 === 0) {
+        attacker.client.send({ type: "action", seq: 1, action: "attack" }); // duplicate
+        attacker.client.send({ type: "action", seq: 0, action: "attack" }); // stale
+      }
+    }
+    expect(lastHp).toBe(firstHit!.hp);
+
+    // Phase 3: legitimate attack spam until the victim dies. Geometry is
+    // frozen (nobody has moved since the first hit), so every off-cooldown
+    // swing connects. The victim must be visible to the attacker while alive
+    // (adjacent open cell), then vanish from visiblePlayers once dead.
+    let dead = false;
+    let sawVictimAlive = false;
+    for (let i = 0; i < 700 && !dead; i++) {
+      const { a, v } = await readBoth();
+      if (v.you.dead) {
+        dead = true;
+        break;
+      }
+      if (a.visiblePlayers.some((pp) => pp.playerId === victim.playerId)) sawVictimAlive = true;
+      if (i % 2 === 0) {
+        attacker.client.send({ type: "action", seq: actionSeq++, action: "attack" });
+      }
+    }
+    expect(dead).toBe(true);
+    expect(lastHp).toBe(0);
+    expect(sawVictimAlive).toBe(true);
+
+    // Every observed hp change is a strict drop, and drops are spaced at
+    // least one weapon cooldown apart — spam never bypassed the cooldown.
+    expect(hpEvents.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < hpEvents.length; i++) {
+      expect(hpEvents[i]!.hp).toBeLessThan(hpEvents[i - 1]!.hp);
+      expect(hpEvents[i]!.tick - hpEvents[i - 1]!.tick).toBeGreaterThanOrEqual(minCooldownTicks);
+    }
+
+    // Dead players keep receiving snapshots (their frozen view) until the end.
+    let prevTick = hpEvents[hpEvents.length - 1]!.tick;
+    for (let i = 0; i < 3; i++) {
+      const v: SnapshotMsg = await victim.client.next("snapshot", 5000);
+      expect(v.you.dead).toBe(true);
+      expect(v.you.hp).toBe(0);
+      expect(v.tick).toBeGreaterThan(prevTick);
+      prevTick = v.tick;
+    }
+
+    // The corpse is not a player: dead victim never appears in visiblePlayers.
+    const deathTick = prevTick;
+    let afterKill: SnapshotMsg;
+    do {
+      afterKill = await attacker.client.next("snapshot", 5000);
+    } while (afterKill.tick < deathTick);
+    expect(afterKill.visiblePlayers.some((pp) => pp.playerId === victim.playerId)).toBe(false);
+
+    // Match end condition counts dead humans as resolved: once the attacker
+    // disconnects, the only connected human is dead => the match ends, and
+    // matchEnd names the victim in `eliminated` (death order).
+    attacker.client.close();
+    const end = await victim.client.next("matchEnd", 5000);
+    expect(end.reason).toBe("allEscaped");
+    expect(end.escaped).toEqual([]);
+    expect(end.eliminated).toEqual([victim.playerId]);
+
+    victim.client.close();
+    await victim.client.closed;
+  }, 90000);
 });

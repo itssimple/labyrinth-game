@@ -31,6 +31,16 @@ export const WALL_ATTENUATION: Record<MaterialId, number> = {
   [Material.Sand]: 0.45,
 };
 
+/** Auto-pickup range in tiles: walking this close to a floor item grabs it. */
+export const PICKUP_RANGE = 0.5;
+
+/**
+ * A dropped item is locked against re-pickup by its dropper until the dropper
+ * has moved this far from it (slightly beyond PICKUP_RANGE, hysteresis) —
+ * otherwise drop would instantly bounce back into the inventory.
+ */
+export const DROP_RELOCK_RELEASE_RANGE = 0.75;
+
 /** Effective intensity at or below this is inaudible (perceiveSound → null). */
 export const SOUND_MIN_AUDIBLE = 0.05;
 

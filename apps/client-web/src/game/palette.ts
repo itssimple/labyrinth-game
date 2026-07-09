@@ -1,4 +1,5 @@
 import { FogState, Material, type FogStateId, type MaterialId } from "@echowake/common";
+import type { ItemKind } from "@echowake/content";
 
 /** World pixels per maze tile. */
 export const TILE_PX = 32;
@@ -26,6 +27,21 @@ export const WALL_COLOR: Record<MaterialId, number> = {
 export const EXIT_COLOR = 0x39d353;
 export const YOU_COLOR = 0x51d0ff;
 export const OTHER_COLOR = 0xff5f6d;
+
+/** Floor-item marker color per item kind (diamond fill + HUD slot letter). */
+export const ITEM_KIND_COLOR: Record<ItemKind, number> = {
+  weapon: 0xffa14e,
+  armor: 0x9fb6c9,
+  boots: 0xc08a52,
+  charm: 0xc77bff,
+  consumable: 0x6fe08a,
+};
+
+/** Unknown (modded) item ids fall back to a neutral marker color. */
+export const ITEM_FALLBACK_COLOR = 0xbcbcc8;
+
+/** Alpha of remembered-item ghosts (fog overlay dims them further as it ages). */
+export const ITEM_GHOST_ALPHA = 0.55;
 
 /** Fog overlay per knowledge state (alpha 0 = fully bright / no overlay). */
 export const FOG_OVERLAY: Record<FogStateId, { color: number; alpha: number }> = {

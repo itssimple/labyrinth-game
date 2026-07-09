@@ -7,6 +7,9 @@ export interface InputSample {
 
 const IDLE: InputSample = { moveX: 0, moveY: 0, sprint: false, sneak: false };
 
+/** Discrete game-action keys: 1-4 slot, Q drop, Space attack. */
+const ACTION_CODES = new Set(["Digit1", "Digit2", "Digit3", "Digit4", "KeyQ", "Space"]);
+
 /**
  * Keyboard state tracker for gameplay input. WASD/arrows move, Shift sprints,
  * Ctrl or C sneaks. Pure key bookkeeping — sampling and sending happen in the
@@ -15,13 +18,16 @@ const IDLE: InputSample = { moveX: 0, moveY: 0, sprint: false, sneak: false };
 export class InputTracker {
   private readonly down = new Set<string>();
   private attached = false;
-  /** When false (e.g. chat overlay open) read() reports idle input. */
+  /** When false (e.g. chat overlay open) read() reports idle input AND action keys go dead. */
   enabled = true;
+  /** Fired once per press (no key repeat) for ACTION_CODES while enabled. */
+  onAction: ((code: string) => void) | null = null;
 
   private readonly onKeyDown = (e: KeyboardEvent) => {
     this.down.add(e.code);
     // Keep arrows/space from scrolling the page while playing.
     if (this.enabled && (e.code.startsWith("Arrow") || e.code === "Space")) e.preventDefault();
+    if (this.enabled && !e.repeat && ACTION_CODES.has(e.code)) this.onAction?.(e.code);
   };
   private readonly onKeyUp = (e: KeyboardEvent) => {
     this.down.delete(e.code);
