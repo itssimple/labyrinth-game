@@ -295,6 +295,40 @@ overlay, sends `chat`.
 Suggested layout: `src/net/` (socket wrapper), `src/game/` (Pixi renderer, fog
 memory, ripples), `src/ui/` (React screens), `src/main.tsx` (wiring).
 
+## Deployment (public dedicated server)
+
+One deployable: the dedicated server also serves the built web client, so a
+single container is the whole game.
+
+Server (apps/server):
+
+- `@fastify/static` serves `CLIENT_DIST` (env; default: `../client-web/dist`
+  relative to apps/server, only if it exists) at `/`. `/healthz`, `/metrics`
+  and `/ws` keep priority over static files. No SPA fallback needed (single
+  page). When CLIENT_DIST is absent the server runs WS-only (dev mode).
+- Config via env only (document in docs/DEPLOYMENT.md): `PORT` (8080), `HOST`
+  (0.0.0.0), `CLIENT_DIST`, `LOG_LEVEL` (fastify logger level, default info).
+- `GET /metrics`: JSON `{ uptimeS, lobbies, players, botsInLobbies,
+  runningMatches, protocolVersion }`. (Prometheus format is a later TODO.)
+- Graceful shutdown: on SIGTERM/SIGINT, broadcast a server `error`
+  ("serverShutdown" is NOT a new code — reuse "badMessage") is unnecessary;
+  simply stop accepting connections, end all matches (release entities!),
+  close sockets, then `app.close()`. Exit 0.
+- Dockerfile at repo root, multi-stage: (1) pnpm install + vite build of
+  client-web with no VITE_SERVER_URL (same-origin default), (2) runtime image
+  with only what the server needs, running as non-root, `EXPOSE 8080`,
+  HEALTHCHECK on /healthz. `docker build .` then `docker run -p 8080:8080`
+  serves the playable game at http://localhost:8080.
+
+Client (apps/client-web) server-URL resolution, in priority order:
+
+1. Manual address from the main menu "server" field (persisted to
+   localStorage; blank = auto).
+2. `VITE_SERVER_URL` build-time override (dev/e2e only).
+3. Same-origin when the page was NOT served by the vite dev server (i.e. not
+   port 5173): `wss://host/ws` when https, else `ws://host/ws`.
+4. Dev fallback `ws://localhost:8080/ws`.
+
 ## Out of scope for the slice (leave TODOs, do not implement)
 
 Bots/AI, combat, items/equipment, voice, prediction & lag compensation, binary
