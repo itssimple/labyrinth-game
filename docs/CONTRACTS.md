@@ -167,6 +167,8 @@ connection identity is not simulation state). Lobby: `createLobby` makes a
 `lobbyState` on every change; host `startMatch` → generate maze from options
 (server picks the seed if the host's is empty), `createSimulation`, send
 `matchStart` (yourSpawnIndex = join order), run `setInterval` loop at TICK_RATE.
+`endTick` comes from `MATCH_DURATION_S_PER_SIZE[options.size] * TICK_RATE` —
+bigger labyrinths get more time.
 `startMatch` must also enforce `MAX_PLAYERS_PER_SIZE` from @labyrinth/common:
 if the lobby has more players than the chosen size allows, reply
 `error: "tooManyPlayersForSize"` and do not start.

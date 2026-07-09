@@ -135,6 +135,12 @@ Each size has a maximum player count so matches keep enough labyrinth per
 player for stealth and exploration to matter. The server rejects starting a
 match on a size too small for the lobby.
 
+Maps are intentionally large relative to their player caps (hundreds of cells
+per player): encountering another player or AI should be uncommon and
+meaningful, and locating anyone should require exploration, sound
+interpretation, and teamwork rather than luck. Match duration scales with map
+size so larger labyrinths remain escapable.
+
 Future expansions:
 
 - biome themes

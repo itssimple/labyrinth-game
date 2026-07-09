@@ -15,21 +15,34 @@ export const MOVE_SPEED = {
 /** Radius (in tiles) of line-of-sight vision. */
 export const VISION_RADIUS = 8;
 
-/** Escape mode: match duration in seconds before the labyrinth "collapses". */
+/** Escape mode: fallback match duration in seconds (prefer the per-size table). */
 export const MATCH_DURATION_S = 300;
+
+/** Escape mode: match duration per maze size — bigger labyrinths need more time. */
+export const MATCH_DURATION_S_PER_SIZE: Record<MazeSize, number> = {
+  tiny: 180,
+  small: 300,
+  medium: 420,
+  large: 600,
+  huge: 900,
+};
 
 /** Player collision radius in tiles. */
 export const PLAYER_RADIUS = 0.35;
 
 export type MazeSize = "tiny" | "small" | "medium" | "large" | "huge";
 
-/** Maze dimensions per size. Odd numbers suit grid maze algorithms. */
+/**
+ * Maze dimensions per size. Odd numbers suit grid maze algorithms.
+ * Deliberately large relative to the player caps (~300-650 cells per player):
+ * finding other players should be hard, and information should stay scarce.
+ */
 export const MAZE_DIMENSIONS: Record<MazeSize, { width: number; height: number }> = {
-  tiny: { width: 15, height: 15 },
-  small: { width: 25, height: 25 },
-  medium: { width: 35, height: 35 },
-  large: { width: 51, height: 51 },
-  huge: { width: 75, height: 75 },
+  tiny: { width: 25, height: 25 },
+  small: { width: 41, height: 41 },
+  medium: { width: 61, height: 61 },
+  large: { width: 81, height: 81 },
+  huge: { width: 101, height: 101 },
 };
 
 export const MAX_PLAYERS = 16;
