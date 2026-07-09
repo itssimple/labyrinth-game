@@ -662,6 +662,14 @@ Future coding agents should:
 
 ---
 
+# Polish Backlog (planned for the finetuning phase)
+
+- Fog reveal/hide should fade in and out over a few frames instead of
+  changing instantly (the render-texture fog mask makes this cheap:
+  interpolate per-cell mask values toward their target over time).
+- More detailed player sprites and proper textures (replacing the
+  placeholder shapes and material tints).
+
 # Future Ideas
 
 - Day/Night cycle
