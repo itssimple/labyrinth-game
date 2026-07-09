@@ -227,7 +227,13 @@ export class Match {
     for (const bot of this.bots) {
       const state = this.sim.getPlayerState(bot.slot);
       if (state.escaped || state.dead) continue; // the dead don't wander
-      const visibleCells = computeVisibleCells(this.maze, state.x, state.y);
+      // Bots see through the same directional cone as humans: facing comes
+      // from their authoritative PlayerState (the sim derives it from their
+      // movement), never from a wider 360° view.
+      const visibleCells = computeVisibleCells(this.maze, state.x, state.y, {
+        x: state.facingX,
+        y: state.facingY,
+      });
       const sounds: PerceivedSound[] = [];
       for (const raw of this.prevSounds) {
         if (raw.emitterId === bot.slot) continue; // a bot never hears itself
@@ -252,11 +258,15 @@ export class Match {
     // toward this tick's facing (facing derives from the same tick's input).
     for (const p of this.players.values()) {
       if (p.pending) {
+        // aimX/aimY are codec-validated (finite, bounded); the sim normalizes
+        // and ignores zero/absent aim, keeping the previous facing.
         this.sim.setInput(p.slot, {
           moveX: p.pending.moveX,
           moveY: p.pending.moveY,
           sprint: p.pending.sprint,
           sneak: p.pending.sneak,
+          aimX: p.pending.aimX,
+          aimY: p.pending.aimY,
         });
         p.ackSeq = p.pending.seq;
         p.pending = null;
@@ -300,7 +310,14 @@ export class Match {
       ...this.bots.map((b) => ({ playerId: b.playerId, state: this.sim.getPlayerState(b.slot) })),
     ];
     for (const { p, state } of states) {
-      const visible = computeVisibleCells(this.maze, state.x, state.y);
+      // Directional vision, enforced server-side: the cone is cut here from
+      // the player's authoritative facing, so visiblePlayers and visibleItems
+      // below inherit it automatically — nothing outside the cone ever leaves
+      // the server (the client's cone drawing is presentation only).
+      const visible = computeVisibleCells(this.maze, state.x, state.y, {
+        x: state.facingX,
+        y: state.facingY,
+      });
       const visiblePlayers: VisiblePlayerState[] = [];
       for (const other of observable) {
         // Escaped and dead players are out of the world — never rendered.

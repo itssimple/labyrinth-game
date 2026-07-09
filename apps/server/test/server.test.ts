@@ -286,6 +286,8 @@ describe("lobby and match flow", () => {
     expect(snap.you.y).toBeCloseTo(hostSpawn.y + 0.5, 5);
     const guestSpawn = maze.spawns[startGuest.yourSpawnIndex]!;
     const guestCell = cellIndex(maze.width, guestSpawn.x, guestSpawn.y);
+    // 360° (no facing) vision is a superset of the server's directional cone,
+    // so "not visible at 360°" is still a valid precondition for the seed.
     const hostVision = computeVisibleCells(maze, snap.you.x, snap.you.y);
     expect(hostVision.has(guestCell)).toBe(false); // precondition for the seed
     expect(snap.visibleCells).not.toContain(guestCell);
@@ -656,7 +658,9 @@ describe("items and combat", () => {
       const seed = `items-itest-${i}`;
       const maze = generateMaze({ seed, size: "tiny" });
       const spawn = maze.spawns[0]!;
-      const vis = computeVisibleCells(maze, spawn.x + 0.5, spawn.y + 0.5);
+      // Facing east ({x:1, y:0}) matches the sim's initial facing, so this is
+      // exactly the cone the first snapshot is cut with.
+      const vis = computeVisibleCells(maze, spawn.x + 0.5, spawn.y + 0.5, { x: 1, y: 0 });
       const predicted = createSimulation({ maze, seed, items: ITEM_DEFS }).listFloorItems();
       const inLos = predicted.filter((fi) =>
         vis.has(cellIndex(maze.width, Math.floor(fi.x), Math.floor(fi.y))),
@@ -914,4 +918,107 @@ describe("items and combat", () => {
     victim.client.close();
     await victim.client.closed;
   }, 90000);
+});
+
+describe("directional vision", () => {
+  it("cuts snapshots to the view cone server-side and applies in-range aim", async () => {
+    // Search for a tiny seed where spawn 0 has, beyond the peripheral radius,
+    // at least one cell visible ONLY when facing east and one ONLY when
+    // facing west. Both cells are visible pre-cone (legacy 360° call), which
+    // is what makes their absence below prove the server cuts the cone.
+    let found: {
+      seed: string;
+      east: Set<number>;
+      west: Set<number>;
+      eastOnly: number;
+      westOnly: number;
+    } | null = null;
+    for (let i = 0; i < 2000 && !found; i++) {
+      const seed = `cone-itest-${i}`;
+      const maze = generateMaze({ seed, size: "tiny" });
+      const s = maze.spawns[0]!;
+      const cx = s.x + 0.5;
+      const cy = s.y + 0.5;
+      const all = computeVisibleCells(maze, cx, cy); // legacy 360°
+      const east = computeVisibleCells(maze, cx, cy, { x: 1, y: 0 });
+      const west = computeVisibleCells(maze, cx, cy, { x: -1, y: 0 });
+      const eastOnly = [...east].find((c) => !west.has(c) && all.has(c));
+      const westOnly = [...west].find((c) => !east.has(c) && all.has(c));
+      if (eastOnly !== undefined && westOnly !== undefined) {
+        found = { seed, east, west, eastOnly, westOnly };
+      }
+    }
+    expect(found).not.toBeNull();
+    const { seed, east, west, eastOnly, westOnly } = found!;
+    const sortedCells = (cells: Iterable<number>): number[] => [...cells].sort((a, b) => a - b);
+
+    const host = await connectPlayer("ConeWatcher");
+    host.client.send({ type: "createLobby" });
+    await host.client.next("lobbyState");
+    host.client.send({ type: "startMatch", options: { seed, size: "tiny" } });
+    const start: MatchStartMsg = await host.client.next("matchStart");
+    expect(start.yourSpawnIndex).toBe(0);
+
+    // Never moved, never aimed: initial facing is +x, so the snapshot is
+    // EXACTLY the east cone — the far west cell that WAS visible pre-cone
+    // (and every other out-of-cone cell) is absent, the east cell present.
+    const first: SnapshotMsg = await host.client.next("snapshot");
+    expect(sortedCells(first.visibleCells)).toEqual(sortedCells(east));
+    expect(first.visibleCells).toContain(eastOnly);
+    expect(first.visibleCells).not.toContain(westOnly);
+
+    /** Sends a stand-still input with the given aim and awaits its ack. */
+    let seq = 0;
+    const aimAndAck = async (aimX: number, aimY: number): Promise<SnapshotMsg> => {
+      const mySeq = ++seq;
+      host.client.send({
+        type: "input",
+        seq: mySeq,
+        moveX: 0,
+        moveY: 0,
+        aimX,
+        aimY,
+        sprint: false,
+        sneak: false,
+      });
+      for (let i = 0; i < 40; i++) {
+        const snap: SnapshotMsg = await host.client.next("snapshot");
+        if (snap.ackSeq >= mySeq) return snap;
+      }
+      throw new Error("input never acked");
+    };
+
+    // In-range aim is applied: flip aim west while standing still and the
+    // whole visible set flips to the west cone with it.
+    const flipped = await aimAndAck(-1, 0);
+    expect(sortedCells(flipped.visibleCells)).toEqual(sortedCells(west));
+    expect(flipped.visibleCells).toContain(westOnly);
+    expect(flipped.visibleCells).not.toContain(eastOnly);
+
+    // Non-unit in-range aim is normalized by the sim: a short east vector
+    // flips the cone straight back.
+    const back = await aimAndAck(0.25, 0);
+    expect(sortedCells(back.visibleCells)).toEqual(sortedCells(east));
+
+    // Garbage aim (huge values) dies at the codec boundary — badMessage, the
+    // sim never sees it, and the facing (east) is unchanged.
+    host.client.sendRaw(
+      JSON.stringify({
+        type: "input",
+        seq: seq + 1,
+        moveX: 0,
+        moveY: 0,
+        aimX: 1e9,
+        aimY: 0,
+        sprint: false,
+        sneak: false,
+      }),
+    );
+    expect((await host.client.next("error")).code).toBe("badMessage");
+    const after: SnapshotMsg = await host.client.next("snapshot");
+    expect(sortedCells(after.visibleCells)).toEqual(sortedCells(east));
+
+    host.client.close();
+    await host.client.closed;
+  }, 20000);
 });
