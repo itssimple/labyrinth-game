@@ -19,7 +19,19 @@ A multiplayer-first, top-down pixel-art labyrinth game (working title "Labyrinth
 - **Persistence:** PostgreSQL; Redis cache; JWT auth
 - **Monorepo layout:** `/apps` (client-web, client-desktop, client-mobile, server, shared, tools) and `/packages` (common, network, protocol, assets, math, ecs), docs in `/docs`
 
-There is no build tooling committed yet. When scaffolding lands (package manager, build/test/lint commands), record the exact commands in this file.
+## Commands
+
+pnpm workspaces + Turborepo. Node >= 20, pnpm 10.
+
+- `pnpm install` — install everything
+- `pnpm test` / `pnpm typecheck` / `pnpm build` — run via turbo across all packages
+- `pnpm --filter @labyrinth/<pkg> test` — one package's tests (vitest); add `-- path/to/file.test.ts` for a single file
+- `pnpm --filter @labyrinth/server dev` — run the game server (port 8080, tsx watch)
+- `pnpm --filter @labyrinth/client-web dev` — run the web client (Vite, port 5173)
+
+Packages export TypeScript source directly (`main: ./src/index.ts`) — no build step during development; apps consume them via the workspace.
+
+Module API contracts between packages are pinned in `docs/CONTRACTS.md` — change contracts there first, then in code.
 
 ## Architecture Invariants
 

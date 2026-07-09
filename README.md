@@ -501,8 +501,11 @@ Android
 /assets
 /math
 /ecs
+/mazegen
 
 /docs
+
+Module APIs for the current vertical slice are specified in /docs/CONTRACTS.md.
 
 ---
 
