@@ -9,11 +9,16 @@
  *
  * 1. TWO-PLAYER: two isolated headless Chromium contexts — host lobby ->
  *    join by code -> start a tiny match -> hold W -> assert the match timer
- *    is counting down, collecting console errors from both pages.
+ *    is counting down and the HUD ping indicator shows a real RTT number
+ *    ("N ms"), collecting console errors from both pages.
  * 2. SOLO-WITH-BOT: a fresh context hosts a lobby, clicks "Add bot",
  *    asserts the roster shows 2 entries with a BOT tag, starts a small
  *    match, asserts the Pixi canvas + HUD timer countdown, and lets the
  *    match run ~4s with zero console errors.
+ * 3. PUBLIC-BROWSER: dave hosts a lobby and checks "List publicly"; erin
+ *    opens "Browse public games", sees exactly one entry (dave's, with his
+ *    host name), clicks Join, and lands in dave's lobby — both rosters show
+ *    2 players, zero console errors.
  *
  * Exit code 0 + "SMOKE PASS" on success; non-zero with details otherwise.
  * Only the processes spawned here are killed on exit.
@@ -287,6 +292,22 @@ async function main() {
   parseTimer(timerBText); // throws if bob's HUD has no valid timer
   log(`match running: alice timer ${t0}s -> ${t1}s, bob timer ${timerBText.trim()}`);
 
+  // 7b. HUD ping indicator must show a measured RTT ("N ms", not the "— ms"
+  //     placeholder) on an in-game page — clients ping every ~2s, so a real
+  //     sample must have landed well within this timeout.
+  await pageA
+    .waitForFunction(
+      () => /^\d+ ms$/.test(document.querySelector(".hud .ping")?.textContent?.trim() ?? ""),
+      undefined,
+      { timeout: 10_000 },
+    )
+    .catch(async () => {
+      const text = await pageA.locator(".hud .ping").textContent().catch(() => null);
+      throw new Error(`alice's HUD ping never showed a number, got ${JSON.stringify(text)}`);
+    });
+  const pingText = ((await pageA.locator(".hud .ping").textContent()) ?? "").trim();
+  log(`alice's HUD ping shows a measured RTT: "${pingText}"`);
+
   // 8. Console errors from the whole run fail the smoke.
   await sleep(500); // let any straggling errors land
   if (consoleErrors.length > 0) {
@@ -361,12 +382,112 @@ async function main() {
   if (soloErrors.length > 0) {
     throw new Error(`console errors observed in SOLO-WITH-BOT scenario:\n  ${soloErrors.join("\n  ")}`);
   }
+  log(`solo-with-bot scenario OK (lobby ${codeC}, timer ${s0}s -> ${s1}s)`);
+
+  // ---------------------------------------------------------------------
+  // Scenario 3 — PUBLIC-BROWSER: reuse the running server + vite.
+  // ---------------------------------------------------------------------
+  // Close carol's context first: her lobby (and its bot) disappears with
+  // her, and — like every earlier lobby — it was never listed publicly, so
+  // the browser below must show exactly ONE entry: dave's.
+  await ctxC.close();
+
+  log("PUBLIC-BROWSER: dave hosts and lists his lobby publicly ...");
+  const ctxD = await browser.newContext();
+  const ctxE = await browser.newContext();
+  const pageD = await ctxD.newPage();
+  const pageE = await ctxE.newPage();
+  const browserErrors = [];
+  watchErrors(pageD, "dave", browserErrors);
+  watchErrors(pageE, "erin", browserErrors);
+
+  // 14. Dave hosts a lobby and checks "List publicly" (host-only toggle).
+  await pageD.goto(APP_URL, { waitUntil: "domcontentloaded" });
+  await pageD.getByPlaceholder("your name").fill("dave");
+  await pageD.getByRole("button", { name: "Host game" }).click();
+  await pageD.locator(".lobby-code").waitFor({ timeout: 15_000 });
+  const codeD = (await pageD.locator(".lobby-code").textContent())?.trim() ?? "";
+  if (!/^[A-Z]{4}$/.test(codeD)) throw new Error(`bad lobby code read from DOM: ${JSON.stringify(codeD)}`);
+  const publicToggle = pageD.getByLabel("List publicly");
+  if (await publicToggle.isChecked()) {
+    throw new Error("'List publicly' is already checked on a fresh lobby — lobbies must default to private");
+  }
+  // Plain click, not check(): the checkbox is React-controlled by
+  // lobbyState.isPublic, so its checked state only settles after the server
+  // round-trip — check()'s immediate post-click assertion would race that.
+  await publicToggle.click();
+  // Waiting for it to become checked proves the server accepted
+  // setLobbyPublic and echoed isPublic=true back in lobbyState.
+  await pageD
+    .waitForFunction(
+      () => document.querySelector("label.checkbox input[type=checkbox]")?.checked === true,
+      undefined,
+      { timeout: 10_000 },
+    )
+    .catch(() => {
+      throw new Error("'List publicly' never became checked — server did not echo isPublic=true");
+    });
+  log(`dave hosted lobby ${codeD} and listed it publicly`);
+
+  // 15. Erin browses public games and must see exactly one entry: dave's.
+  await pageE.goto(APP_URL, { waitUntil: "domcontentloaded" });
+  await pageE.getByPlaceholder("your name").fill("erin");
+  await pageE.getByRole("button", { name: "Browse public games" }).click();
+  // Poll with Refresh: the first lobbyList reply may have raced dave's
+  // setLobbyPublic round-trip, and Refresh is part of the contract anyway.
+  const browseDeadline = Date.now() + 15_000;
+  let entryCount = 0;
+  while (Date.now() < browseDeadline) {
+    entryCount = await pageE.locator(".lobby-browser li").count();
+    if (entryCount > 0) break;
+    await pageE.getByRole("button", { name: "Refresh" }).click();
+    await sleep(500);
+  }
+  if (entryCount !== 1) {
+    throw new Error(`public lobby browser shows ${entryCount} entries, expected exactly 1 (dave's)`);
+  }
+  const hostName = ((await pageE.locator(".lobby-browser li .host-name").textContent()) ?? "").trim();
+  if (hostName !== "dave") {
+    throw new Error(`public lobby entry host name is ${JSON.stringify(hostName)}, expected "dave"`);
+  }
+  log("erin's browser shows exactly one public game, hosted by dave");
+
+  // 16. Erin joins from the browser and must land in dave's lobby.
+  const joinBtn = pageE.locator(".lobby-browser li button");
+  if (await joinBtn.isDisabled()) {
+    throw new Error("Join button is disabled for a joinable (not in-match) public lobby");
+  }
+  await joinBtn.click();
+  await pageE.locator(".lobby-code").waitFor({ timeout: 15_000 });
+  const codeE = (await pageE.locator(".lobby-code").textContent())?.trim() ?? "";
+  if (codeE !== codeD) {
+    throw new Error(`erin landed in lobby ${JSON.stringify(codeE)}, expected dave's ${codeD}`);
+  }
+  for (const [label, page] of [["dave", pageD], ["erin", pageE]]) {
+    await page
+      .waitForFunction(() => document.querySelectorAll(".player-list li").length === 2, undefined, {
+        timeout: 10_000,
+      })
+      .catch(async () => {
+        const n = await page.locator(".player-list li").count();
+        throw new Error(`${label}'s roster shows ${n} players after the browser join, expected 2`);
+      });
+  }
+  log(`erin joined dave's lobby ${codeD} via the public browser; both rosters show 2 players`);
+
+  // 17. Zero console errors during the whole public-browser scenario.
+  await sleep(500); // let any straggling errors land
+  if (browserErrors.length > 0) {
+    throw new Error(`console errors observed in PUBLIC-BROWSER scenario:\n  ${browserErrors.join("\n  ")}`);
+  }
 
   console.log(
     `\nSMOKE PASS — two-player: lobby ${code}, 2 players joined, tiny match started on both pages, ` +
-      `timer counting down (${t0}s -> ${t1}s), zero console errors; ` +
+      `timer counting down (${t0}s -> ${t1}s), HUD ping "${pingText}", zero console errors; ` +
       `solo-with-bot: lobby ${codeC}, roster 2 (1 BOT), small match ran ~4s, ` +
-      `timer counting down (${s0}s -> ${s1}s), zero console errors.`,
+      `timer counting down (${s0}s -> ${s1}s), zero console errors; ` +
+      `public-browser: lobby ${codeD} listed publicly, browser showed exactly 1 entry (host dave), ` +
+      `erin joined via Join, roster 2 on both pages, zero console errors.`,
   );
 }
 

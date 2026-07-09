@@ -1,5 +1,6 @@
 import { useUi } from "../app/store";
 import type { GameSession } from "../net/session";
+import { BrowseScreen } from "./BrowseScreen";
 import { GameScreen } from "./GameScreen";
 import { LobbyScreen } from "./LobbyScreen";
 import { MatchEndScreen } from "./MatchEndScreen";
@@ -11,6 +12,8 @@ export function App({ session }: { session: GameSession }) {
   switch (ui.screen) {
     case "menu":
       return <MenuScreen session={session} ui={ui} />;
+    case "browse":
+      return <BrowseScreen session={session} ui={ui} />;
     case "lobby":
       return <LobbyScreen session={session} ui={ui} />;
     case "game":

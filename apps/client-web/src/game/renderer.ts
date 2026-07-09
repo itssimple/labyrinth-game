@@ -10,13 +10,25 @@ import {
   type FogStateId,
   type Maze,
 } from "@echowake/common";
+import type { AudioEngine } from "../audio/engine";
 import type { MatchView } from "./state";
+import { placeCompass } from "./compass";
 import { Minimap } from "./minimap";
 import { RippleField } from "./ripples";
 import { EXIT_COLOR, FLOOR_COLOR, FOG_OVERLAY, OTHER_COLOR, TILE_PX, WALL_COLOR, YOU_COLOR } from "./palette";
 
 const WALL_THICKNESS = 3;
 const FOG_REDRAW_MIN_MS = 90;
+/** Inset of the exit-compass arrow from the screen edges. */
+const COMPASS_MARGIN_PX = 26;
+/** Reporting window of the HUD FPS counter. */
+const FPS_WINDOW_MS = 1000;
+
+/** Presentation-only callbacks out of the renderer (HUD numbers etc.). */
+export interface RendererHooks {
+  /** Called about once per second with the measured frames-per-second. */
+  onFps?: (fps: number) => void;
+}
 
 /** Draws the static maze layer: material-tinted floors, walls, exit marker. */
 function drawMaze(floors: Graphics, walls: Graphics, exitG: Graphics, maze: Maze): void {
@@ -64,11 +76,20 @@ export class GameRenderer {
   private readonly otherDots = new Map<string, Graphics>();
   private readonly ripples = new RippleField();
   private readonly minimap: Minimap;
+  /** Exit compass: screen-space HUD arrow, world-independent. */
+  private readonly compassG = new Graphics();
   private lastFogRedrawMs = -Infinity;
+  private fpsFrames = 0;
+  private fpsWindowStartMs = performance.now();
   private readonly frame = (ticker: Ticker) => this.onFrame(ticker);
 
   /** Creates the Pixi Application (async in v8) and mounts its canvas. */
-  static async create(container: HTMLElement, match: MatchView): Promise<GameRenderer> {
+  static async create(
+    container: HTMLElement,
+    match: MatchView,
+    audio: AudioEngine,
+    hooks: RendererHooks = {},
+  ): Promise<GameRenderer> {
     const app = new Application();
     await app.init({
       resizeTo: container,
@@ -77,22 +98,31 @@ export class GameRenderer {
       roundPixels: true,
     });
     container.appendChild(app.canvas);
-    return new GameRenderer(app, match);
+    return new GameRenderer(app, match, audio, hooks);
   }
 
   private constructor(
     private readonly app: Application,
     private readonly match: MatchView,
+    private readonly audio: AudioEngine,
+    private readonly hooks: RendererHooks,
   ) {
     const floors = new Graphics();
     const walls = new Graphics();
     drawMaze(floors, walls, this.exitG, match.maze);
     this.youG.circle(0, 0, TILE_PX * 0.35).fill(YOU_COLOR).stroke({ color: 0xffffff, width: 2 });
+    // Kite-shaped arrow pointing +x; placeCompass supplies the rotation.
+    this.compassG
+      .poly([14, 0, -9, 9, -4, 0, -9, -9])
+      .fill(EXIT_COLOR)
+      .stroke({ color: 0xd9ffe4, width: 1.5 });
+    this.compassG.visible = false;
 
     // Order: floors, exit, walls, players, fog, then ripples above the fog.
     this.world.addChild(floors, this.exitG, walls, this.othersLayer, this.youG, this.fogG, this.ripples.container);
     this.minimap = new Minimap(match.maze);
-    app.stage.addChild(this.world, this.minimap.container);
+    // HUD layer sits above the world: compass arrow, then the minimap.
+    app.stage.addChild(this.world, this.compassG, this.minimap.container);
     app.ticker.add(this.frame);
   }
 
@@ -100,6 +130,15 @@ export class GameRenderer {
     const match = this.match;
     const nowMs = performance.now();
     const you = match.you.posAt(nowMs) ?? { x: 0.5, y: 0.5 };
+
+    // FPS: count rendered frames over a rolling ~1s window, then report.
+    this.fpsFrames++;
+    const windowMs = nowMs - this.fpsWindowStartMs;
+    if (windowMs >= FPS_WINDOW_MS) {
+      this.hooks.onFps?.(Math.round((this.fpsFrames * 1000) / windowMs));
+      this.fpsFrames = 0;
+      this.fpsWindowStartMs = nowMs;
+    }
 
     // Camera: center on you, integer offsets for a crisp pixel look.
     this.world.position.set(
@@ -116,7 +155,11 @@ export class GameRenderer {
     if (match.soundQueue.length > 0) {
       const minTick = match.latestTick - TICK_RATE;
       for (const s of match.soundQueue.splice(0)) {
-        if (s.tick >= minTick) this.ripples.spawn(s);
+        if (s.tick < minTick) continue;
+        // Sight + sound together: the same perceived event draws a ripple and
+        // plays positionally (panned/attenuated relative to where you are).
+        this.ripples.spawn(s);
+        this.audio.playPerceived(s, you.x, you.y);
       }
     }
     this.ripples.update(ticker.deltaMS);
@@ -130,6 +173,38 @@ export class GameRenderer {
       this.minimap.redraw(match.fog, nowS, you.x, you.y);
     }
     this.minimap.layout(this.app.screen.width);
+    this.updateCompass(nowMs);
+  }
+
+  /**
+   * Exit compass: edge-of-screen arrow toward the exit, shown only once the
+   * exit cell has entered this client's OWN fog memory (Visible or any
+   * remembered state) and only while the exit is off-screen. Derives nothing
+   * from server data beyond the fog memory itself — no wallhack.
+   */
+  private updateCompass(nowMs: number): void {
+    const { maze, fog } = this.match;
+    if (!fog.everSeen(cellIndex(maze.width, maze.exit.x, maze.exit.y))) {
+      this.compassG.visible = false;
+      return;
+    }
+    // Screen-space exit position; the camera keeps "you" at screen center,
+    // so pointing from the center is pointing from your position.
+    const placed = placeCompass(
+      this.app.screen.width,
+      this.app.screen.height,
+      this.world.position.x + (maze.exit.x + 0.5) * TILE_PX,
+      this.world.position.y + (maze.exit.y + 0.5) * TILE_PX,
+      COMPASS_MARGIN_PX,
+    );
+    if (placed === null) {
+      this.compassG.visible = false;
+      return;
+    }
+    this.compassG.visible = true;
+    this.compassG.position.set(placed.x, placed.y);
+    this.compassG.rotation = placed.angle;
+    this.compassG.alpha = 0.7 + 0.3 * Math.sin(nowMs / 280); // pulse like the exit tile
   }
 
   /** Reconciles circles for currently-visible other players. */

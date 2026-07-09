@@ -341,6 +341,122 @@ describe("lobby and match flow", () => {
   });
 });
 
+describe("latency ping", () => {
+  it("echoes t back verbatim in a pong", async () => {
+    const p = await connectPlayer("Pinger");
+    // Not in any lobby on purpose: ping works for any hello'd client and
+    // never touches lobby/match logic. Fractional t must survive verbatim.
+    p.client.send({ type: "ping", t: 12345.678 });
+    const pong = await p.client.next("pong");
+    expect(pong.t).toBe(12345.678);
+    p.client.close();
+    await p.client.closed;
+  });
+});
+
+describe("public lobby browser", () => {
+  it("host toggles setLobbyPublic and lobbyState.isPublic reflects it for everyone", async () => {
+    const host = await connectPlayer("PubHost");
+    const guest = await connectPlayer("PubGuest");
+
+    host.client.send({ type: "createLobby" });
+    const lobby1 = await host.client.next("lobbyState");
+    expect(lobby1.isPublic).toBe(false); // private by default
+
+    guest.client.send({ type: "joinLobby", code: lobby1.code });
+    await guest.client.next("lobbyState");
+    await host.client.next("lobbyState");
+
+    // Non-host may not toggle visibility.
+    guest.client.send({ type: "setLobbyPublic", isPublic: true });
+    expect((await guest.client.next("error")).code).toBe("notHost");
+
+    host.client.send({ type: "setLobbyPublic", isPublic: true });
+    expect((await host.client.next("lobbyState")).isPublic).toBe(true);
+    expect((await guest.client.next("lobbyState")).isPublic).toBe(true);
+
+    host.client.send({ type: "setLobbyPublic", isPublic: false });
+    expect((await host.client.next("lobbyState")).isPublic).toBe(false);
+    expect((await guest.client.next("lobbyState")).isPublic).toBe(false);
+
+    // Not in a lobby at all => notInLobby.
+    const loner = await connectPlayer("PubLoner");
+    loner.client.send({ type: "setLobbyPublic", isPublic: true });
+    expect((await loner.client.next("error")).code).toBe("notInLobby");
+
+    host.client.close();
+    guest.client.close();
+    loner.client.close();
+  });
+
+  it("listLobbies returns only public lobbies, joinable first then by playerCount", async () => {
+    // Lobby A: 2 humans + 1 bot, public. Lobby B: 1 human, public. C: private.
+    const hostA = await connectPlayer("HostA");
+    const guestA = await connectPlayer("GuestA");
+    const hostB = await connectPlayer("HostB");
+    const hostC = await connectPlayer("HostC");
+    const browser = await connectPlayer("Browser"); // hello'd, never in a lobby
+
+    hostA.client.send({ type: "createLobby" });
+    const lobbyA = await hostA.client.next("lobbyState");
+    guestA.client.send({ type: "joinLobby", code: lobbyA.code });
+    await guestA.client.next("lobbyState");
+    hostA.client.send({ type: "addBot" });
+    await hostA.client.next("lobbyState");
+    hostA.client.send({ type: "setLobbyPublic", isPublic: true });
+    await hostA.client.next("lobbyState");
+
+    hostB.client.send({ type: "createLobby" });
+    const lobbyB = await hostB.client.next("lobbyState");
+    hostB.client.send({ type: "setLobbyPublic", isPublic: true });
+    await hostB.client.next("lobbyState");
+
+    hostC.client.send({ type: "createLobby" });
+    const lobbyC = await hostC.client.next("lobbyState");
+
+    browser.client.send({ type: "listLobbies" });
+    const list1 = await browser.client.next("lobbyList");
+    expect(list1.lobbies.length).toBeLessThanOrEqual(50);
+    // The private lobby's code must never leak into the browser.
+    expect(list1.lobbies.some((l) => l.code === lobbyC.code)).toBe(false);
+    const a1 = list1.lobbies.find((l) => l.code === lobbyA.code);
+    const b1 = list1.lobbies.find((l) => l.code === lobbyB.code);
+    expect(a1).toEqual({
+      code: lobbyA.code,
+      hostName: "HostA",
+      playerCount: 2, // humans only — the bot is counted separately
+      botCount: 1,
+      inMatch: false,
+    });
+    expect(b1).toEqual({
+      code: lobbyB.code,
+      hostName: "HostB",
+      playerCount: 1,
+      botCount: 0,
+      inMatch: false,
+    });
+    // Both joinable => bigger lobby first.
+    expect(list1.lobbies.indexOf(a1!)).toBeLessThan(list1.lobbies.indexOf(b1!));
+
+    // Mid-match lobbies stay listed (inMatch: true) but sort after joinable ones.
+    hostA.client.send({ type: "startMatch", options: { seed: "browser-itest", size: "small" } });
+    await hostA.client.next("matchStart");
+    browser.client.send({ type: "listLobbies" });
+    const list2 = await browser.client.next("lobbyList");
+    const a2 = list2.lobbies.find((l) => l.code === lobbyA.code);
+    const b2 = list2.lobbies.find((l) => l.code === lobbyB.code);
+    expect(a2?.inMatch).toBe(true);
+    expect(b2?.inMatch).toBe(false);
+    expect(list2.lobbies.indexOf(b2!)).toBeLessThan(list2.lobbies.indexOf(a2!));
+
+    hostA.client.close();
+    guestA.client.close();
+    hostB.client.close();
+    hostC.client.close();
+    browser.client.close();
+  });
+});
+
 /** BFS shortest path of cell indices from `from` to `to` (excluding `from`). */
 function bfsPath(maze: Maze, from: number, to: number): number[] {
   const steps = [

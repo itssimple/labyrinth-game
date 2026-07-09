@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { GameSession } from "../net/session";
 import type { UiState } from "../app/store";
 import { SERVER_URL_STORAGE_KEY } from "../net/serverUrl";
+import { VolumeControl } from "./VolumeControl";
 
 /** Main menu: display name + Host or Join-by-code. */
 export function MenuScreen({ session, ui }: { session: GameSession; ui: UiState }) {
@@ -42,6 +43,9 @@ export function MenuScreen({ session, ui }: { session: GameSession; ui: UiState 
         <button disabled={!nameOk} onClick={() => session.host(name)}>
           Host game
         </button>
+        <button className="secondary" disabled={!nameOk} onClick={() => session.browsePublic(name)}>
+          Browse public games
+        </button>
         <div className="row">
           <input
             value={code}
@@ -65,6 +69,10 @@ export function MenuScreen({ session, ui }: { session: GameSession; ui: UiState 
             spellCheck={false}
             onChange={(e) => rememberServer(e.target.value)}
           />
+        </label>
+        <label className="field">
+          volume
+          <VolumeControl audio={session.audio} />
         </label>
         <p className="error">{ui.error ?? ""}</p>
         <span className={`conn ${ui.connection}`}>

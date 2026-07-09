@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { botName } from "@echowake/bots";
 import { MAX_PLAYERS } from "@echowake/common";
-import type { LobbyStateMsg, ServerMessage } from "@echowake/protocol";
+import type { LobbyStateMsg, PublicLobbyInfo, ServerMessage } from "@echowake/protocol";
 import type { Client } from "./client.js";
 import type { Match } from "./match.js";
 
 const CODE_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const CODE_LENGTH = 4;
+/** Upper bound on lobbyList entries — the browser is a sampler, not a census. */
+const PUBLIC_LIST_MAX = 50;
 
 /** An AI player owned by the lobby. Persists across matches until removed. */
 export interface LobbyBot {
@@ -79,6 +81,16 @@ export class Lobby {
     this.match?.removeBot(playerId);
     this.broadcastState();
     return true;
+  }
+
+  /**
+   * Lists (or unlists) the lobby in the public browser (caller must have
+   * checked host) and broadcasts the change.
+   */
+  setPublic(isPublic: boolean): void {
+    if (this.isPublic === isPublic) return;
+    this.isPublic = isPublic;
+    this.broadcastState();
   }
 
   /** Adds a member (caller must have checked isFull/match) and broadcasts state. */
@@ -155,6 +167,30 @@ export class LobbyRegistry {
       if (lobby.match) runningMatches++;
     }
     return { lobbies: this.lobbies.size, players, botsInLobbies, runningMatches };
+  }
+
+  /**
+   * The public lobby browser view: up to PUBLIC_LIST_MAX public lobbies,
+   * joinable (pre-match) ones first, then by human player count descending.
+   * Private lobbies never appear — their codes stay join secrets.
+   */
+  listPublic(): PublicLobbyInfo[] {
+    const infos: PublicLobbyInfo[] = [];
+    for (const lobby of this.lobbies.values()) {
+      if (!lobby.isPublic) continue;
+      const host = lobby.clients.find((c) => c.playerId === lobby.hostId);
+      infos.push({
+        code: lobby.code,
+        hostName: host?.name ?? "???",
+        playerCount: lobby.clients.length,
+        botCount: lobby.bots.length,
+        inMatch: lobby.match !== null,
+      });
+    }
+    infos.sort((a, b) =>
+      a.inMatch !== b.inMatch ? (a.inMatch ? 1 : -1) : b.playerCount - a.playerCount,
+    );
+    return infos.slice(0, PUBLIC_LIST_MAX);
   }
 
   /** Creates a new lobby with a unique random 4-letter code; `host` becomes host. */

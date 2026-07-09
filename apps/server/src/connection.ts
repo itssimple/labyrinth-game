@@ -84,6 +84,13 @@ export function handleConnection(socket: WebSocket, registry: LobbyRegistry): vo
       case "hello":
         sendError("badMessage", "hello already received");
         return;
+      case "ping": {
+        // Latency probe: echo `t` verbatim, immediately, before any
+        // lobby/match dispatch. `t` is opaque to the server (the client
+        // computes RTT from it); the rate limiter above still applies.
+        send({ type: "pong", t: msg.t });
+        return;
+      }
       case "createLobby": {
         c.lobby?.remove(c);
         const lobby = registry.create(c);
@@ -189,6 +196,25 @@ export function handleConnection(socket: WebSocket, registry: LobbyRegistry): vo
         if (!lobby.removeBot(msg.playerId)) {
           sendError("badMessage", "that id is not a bot in this lobby");
         }
+        return;
+      }
+      case "setLobbyPublic": {
+        const lobby = c.lobby;
+        if (!lobby) {
+          sendError("notInLobby", "you are not in a lobby");
+          return;
+        }
+        if (lobby.hostId !== c.playerId) {
+          sendError("notHost", "only the host can list the lobby publicly");
+          return;
+        }
+        lobby.setPublic(msg.isPublic);
+        return;
+      }
+      case "listLobbies": {
+        // Any hello'd client may browse — it only ever exposes lobbies whose
+        // hosts opted into the public list; private codes stay secret.
+        send({ type: "lobbyList", lobbies: registry.listPublic() });
         return;
       }
       case "chat": {

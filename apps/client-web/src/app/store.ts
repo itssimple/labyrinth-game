@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
-import type { LobbyPlayerInfo } from "@echowake/protocol";
+import type { LobbyPlayerInfo, PublicLobbyInfo } from "@echowake/protocol";
 
-export type Screen = "menu" | "lobby" | "game" | "end";
+export type Screen = "menu" | "browse" | "lobby" | "game" | "end";
 export type ConnectionState = "disconnected" | "connecting" | "connected";
 
 export interface ChatEntry {
@@ -14,6 +14,8 @@ export interface LobbyView {
   code: string;
   hostId: string;
   players: LobbyPlayerInfo[];
+  /** True when the host has listed the lobby in the public browser. */
+  isPublic: boolean;
 }
 
 export interface HudView {
@@ -37,6 +39,12 @@ export interface UiState {
   error: string | null;
   selfId: string | null;
   lobby: LobbyView | null;
+  /** Public lobby browser contents; null = no lobbyList received yet. */
+  lobbyList: PublicLobbyInfo[] | null;
+  /** Exponentially smoothed round-trip time in ms; null before the first pong. */
+  pingMs: number | null;
+  /** Renderer frames per second (rolling ~1s window); null while not in a match. */
+  fps: number | null;
   hud: HudView | null;
   chat: ChatEntry[];
   matchResult: MatchResultView | null;
@@ -49,6 +57,9 @@ const INITIAL: UiState = {
   error: null,
   selfId: null,
   lobby: null,
+  lobbyList: null,
+  pingMs: null,
+  fps: null,
   hud: null,
   chat: [],
   matchResult: null,

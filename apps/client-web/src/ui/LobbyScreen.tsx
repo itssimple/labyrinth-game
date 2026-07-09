@@ -42,6 +42,14 @@ export function LobbyScreen({ session, ui }: { session: GameSession; ui: UiState
         </p>
         {isHost ? (
           <>
+            <label className="row checkbox">
+              <input
+                type="checkbox"
+                checked={lobby.isPublic}
+                onChange={(e) => session.setLobbyPublic(e.target.checked)}
+              />
+              List publicly
+            </label>
             <label className="field">
               maze size
               <select value={size} onChange={(e) => setSize(e.target.value as MazeSize)}>
@@ -77,6 +85,7 @@ export function LobbyScreen({ session, ui }: { session: GameSession; ui: UiState
         <span className={`conn ${ui.connection}`}>
           server: {ui.connection}
           {ui.serverHost !== null ? ` (${ui.serverHost})` : ""}
+          {ui.pingMs !== null ? ` · ${Math.round(ui.pingMs)} ms` : ""}
         </span>
       </div>
     </div>
