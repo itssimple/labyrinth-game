@@ -334,6 +334,23 @@ async function main() {
   await sleep(700); // let the action round-trip a few ticks
   log("alice swung (Space) with no visible target — no crash");
 
+  // 7e. Directional vision (docs/CONTRACTS.md "Directional vision (view
+  //     cones) & fog rendering"): sweep the mouse across the canvas so
+  //     aimX/aimY flows through input messages and the cone-shaped fog mask
+  //     re-renders for several distinct facings. Presentation-only check —
+  //     the aim/fog path must not throw (the console-error gate below fails
+  //     the smoke if it does); cone *rules* are covered by package tests.
+  const canvasBox = await pageA.locator(".game-canvas canvas").boundingBox();
+  if (!canvasBox) throw new Error("game canvas has no bounding box — cannot aim with the mouse");
+  const aimAt = (fx, fy) =>
+    pageA.mouse.move(canvasBox.x + canvasBox.width * fx, canvasBox.y + canvasBox.height * fy, { steps: 6 });
+  await aimAt(0.5, 0.5);
+  await aimAt(0.85, 0.25); // aim up-right
+  await sleep(400);
+  await aimAt(0.15, 0.75); // swing the cone down-left
+  await sleep(600); // let aim inputs round-trip and the fog mask repaint
+  log("alice swept the mouse to aim the view cone across the canvas — no crash");
+
   // 8. Console errors from the whole run fail the smoke.
   await sleep(500); // let any straggling errors land
   if (consoleErrors.length > 0) {

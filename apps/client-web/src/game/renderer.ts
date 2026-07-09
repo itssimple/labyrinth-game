@@ -1,34 +1,26 @@
 import { Application, Container, Graphics, Text, type Ticker } from "pixi.js";
-import {
-  cellIndex,
-  FogState,
-  TICK_RATE,
-  WALL_E,
-  WALL_N,
-  WALL_S,
-  WALL_W,
-  type FogStateId,
-  type Maze,
-} from "@echowake/common";
+import { cellIndex, FogState, TICK_RATE, type Maze } from "@echowake/common";
 import type { AudioEngine } from "../audio/engine";
 import type { MatchView } from "./state";
 import { placeCompass } from "./compass";
+import { FogLayers } from "./foglayers";
 import { itemColor, itemInitial } from "./items";
 import { Minimap } from "./minimap";
 import { RippleField } from "./ripples";
 import {
   EXIT_COLOR,
-  FLOOR_COLOR,
-  FOG_OVERLAY,
   ITEM_GHOST_ALPHA,
   OTHER_COLOR,
   TILE_PX,
-  WALL_COLOR,
   YOU_COLOR,
 } from "./palette";
 
-const WALL_THICKNESS = 3;
 const FOG_REDRAW_MIN_MS = 90;
+/**
+ * Even without snapshots (fogDirty), refresh fog + minimap about once a
+ * second so Visible -> Recent -> Stale aging never sits on a stale picture.
+ */
+const FOG_AGE_SWEEP_MS = 1000;
 /** Inset of the exit-compass arrow from the screen edges. */
 const COMPASS_MARGIN_PX = 26;
 /** Reporting window of the HUD FPS counter. */
@@ -38,38 +30,6 @@ const FPS_WINDOW_MS = 1000;
 export interface RendererHooks {
   /** Called about once per second with the measured frames-per-second. */
   onFps?: (fps: number) => void;
-}
-
-/** Draws the static maze layer: material-tinted floors, walls, exit marker. */
-function drawMaze(floors: Graphics, walls: Graphics, exitG: Graphics, maze: Maze): void {
-  const T = TILE_PX;
-  for (let y = 0; y < maze.height; y++) {
-    for (let x = 0; x < maze.width; x++) {
-      const cell = maze.cells[cellIndex(maze.width, x, y)];
-      if (cell === undefined) continue;
-      floors.rect(x * T, y * T, T, T).fill(FLOOR_COLOR[cell.floor]);
-    }
-  }
-  // Draw N + W per cell (plus S/E on the outer border) so shared walls draw once.
-  const half = WALL_THICKNESS / 2;
-  for (let y = 0; y < maze.height; y++) {
-    for (let x = 0; x < maze.width; x++) {
-      const cell = maze.cells[cellIndex(maze.width, x, y)];
-      if (cell === undefined) continue;
-      const color = WALL_COLOR[cell.wallMaterial];
-      if (cell.walls & WALL_N) walls.rect(x * T - half, y * T - half, T + WALL_THICKNESS, WALL_THICKNESS).fill(color);
-      if (cell.walls & WALL_W) walls.rect(x * T - half, y * T - half, WALL_THICKNESS, T + WALL_THICKNESS).fill(color);
-      if (y === maze.height - 1 && cell.walls & WALL_S)
-        walls.rect(x * T - half, (y + 1) * T - half, T + WALL_THICKNESS, WALL_THICKNESS).fill(color);
-      if (x === maze.width - 1 && cell.walls & WALL_E)
-        walls.rect((x + 1) * T - half, y * T - half, WALL_THICKNESS, T + WALL_THICKNESS).fill(color);
-    }
-  }
-  const pad = 4;
-  exitG
-    .rect(maze.exit.x * T + pad, maze.exit.y * T + pad, T - 2 * pad, T - 2 * pad)
-    .fill(EXIT_COLOR)
-    .stroke({ color: 0xd9ffe4, width: 2 });
 }
 
 /** Floor-item marker: a small kind-colored diamond with the item's initial. */
@@ -90,15 +50,26 @@ function makeItemNode(itemId: string): Container {
 }
 
 /**
- * PixiJS game renderer. Owns the Application, world layers, fog overlay,
+ * PixiJS game renderer. Owns the Application, world layers, fog treatment,
  * ripples and minimap. Purely observes the MatchView each frame — it holds
  * no gameplay state of its own.
+ *
+ * Fog of war renders through FogLayers (baked maze textures + tiny mask
+ * textures — constant display-object count regardless of maze size); this
+ * class just feeds it FogMemory on the throttled redraw cadence. Dynamic
+ * entities (players, items, ripples, the exit pulse) always sit ABOVE the
+ * fog treatment: the server already filters them to the view cone, so they
+ * render crisp and undimmed whenever they exist at all.
  */
 export class GameRenderer {
   private readonly world = new Container();
-  private readonly fogG = new Graphics();
+  private readonly fogLayers: FogLayers;
   private readonly youG = new Graphics();
+  /** Facing indicator: short wedge on your sprite (presentation only). */
+  private readonly facingG = new Graphics();
+  /** Exit pulse: animated highlight shown only while the exit cell is visible. */
   private readonly exitG = new Graphics();
+  private readonly exitIndex: number;
   private readonly othersLayer = new Container();
   private readonly otherDots = new Map<string, Graphics>();
   private readonly itemsLayer = new Container();
@@ -136,10 +107,19 @@ export class GameRenderer {
     private readonly audio: AudioEngine,
     private readonly hooks: RendererHooks,
   ) {
-    const floors = new Graphics();
-    const walls = new Graphics();
-    drawMaze(floors, walls, this.exitG, match.maze);
+    // Bakes the static maze (crisp + blurred) once and owns the fog masks.
+    this.fogLayers = new FogLayers(app.renderer, match.maze);
+    this.exitIndex = cellIndex(match.maze.width, match.maze.exit.x, match.maze.exit.y);
     this.youG.circle(0, 0, TILE_PX * 0.35).fill(YOU_COLOR).stroke({ color: 0xffffff, width: 2 });
+    // Subtle direction wedge pointing +x; rotated to the local facing each
+    // frame. Sits just outside the body circle so it reads as a "nose".
+    const r = TILE_PX * 0.35;
+    this.facingG
+      .poly([r + 7, 0, r - 2, 5, r - 2, -5])
+      .fill({ color: 0xffffff, alpha: 0.85 });
+    this.facingG.visible = false;
+    this.youG.addChild(this.facingG);
+    this.drawExitPulse(match.maze);
     // Kite-shaped arrow pointing +x; placeCompass supplies the rotation.
     this.compassG
       .poly([14, 0, -9, 9, -4, 0, -9, -9])
@@ -147,17 +127,15 @@ export class GameRenderer {
       .stroke({ color: 0xd9ffe4, width: 1.5 });
     this.compassG.visible = false;
 
-    // Order: floors, exit, walls, items, players, fog, then ripples above the
-    // fog. Items sit under the fog overlay so remembered ghosts inherit the
-    // aging dimness of their cell ("knowledge ages").
+    // Order: the fog-treated maze at the bottom, then every dynamic entity
+    // ABOVE the fog so nothing the server chose to show is ever dimmed:
+    // exit pulse (visibility-gated), items, other players, you, ripples.
     this.world.addChild(
-      floors,
+      this.fogLayers.root,
       this.exitG,
-      walls,
       this.itemsLayer,
       this.othersLayer,
       this.youG,
-      this.fogG,
       this.ripples.container,
     );
     this.minimap = new Minimap(match.maze);
@@ -166,9 +144,20 @@ export class GameRenderer {
     app.ticker.add(this.frame);
   }
 
+  /** Animated exit highlight, same geometry as the baked static marker. */
+  private drawExitPulse(maze: Maze): void {
+    const pad = 4;
+    this.exitG
+      .rect(maze.exit.x * TILE_PX + pad, maze.exit.y * TILE_PX + pad, TILE_PX - 2 * pad, TILE_PX - 2 * pad)
+      .fill(EXIT_COLOR)
+      .stroke({ color: 0xd9ffe4, width: 2 });
+    this.exitG.visible = false;
+  }
+
   private onFrame(ticker: Ticker): void {
     const match = this.match;
     const nowMs = performance.now();
+    const nowS = match.latestTick / TICK_RATE;
     const you = match.you.posAt(nowMs) ?? { x: 0.5, y: 0.5 };
 
     // FPS: count rendered frames over a rolling ~1s window, then report.
@@ -186,6 +175,13 @@ export class GameRenderer {
       Math.round(this.app.screen.height / 2 - you.y * TILE_PX),
     );
     this.youG.position.set(you.x * TILE_PX, you.y * TILE_PX);
+    const facing = match.localFacing;
+    this.facingG.visible = facing !== null;
+    if (facing !== null) this.facingG.rotation = Math.atan2(facing.y, facing.x);
+    // The exit pulse is a dynamic entity above the fog: show it only while
+    // the exit cell is actually in sight (its remembered look is the baked
+    // static marker under the fog treatment) — never a wallhack.
+    this.exitG.visible = match.fog.stateAt(this.exitIndex, nowS) === FogState.Visible;
     this.exitG.alpha = 0.65 + 0.35 * Math.sin(nowMs / 280);
 
     this.syncOthers(nowMs);
@@ -205,12 +201,15 @@ export class GameRenderer {
     }
     this.ripples.update(ticker.deltaMS);
 
-    // Fog + minimap redraw, throttled; time comes from ticks, not wall clock.
-    if (match.fogDirty && nowMs - this.lastFogRedrawMs >= FOG_REDRAW_MIN_MS) {
+    // Fog + minimap refresh, throttled; time comes from ticks, not wall
+    // clock. Snapshots mark fogDirty; the age sweep keeps knowledge aging
+    // even when no snapshot arrives. Both paths only repaint cells whose
+    // state actually changed (FogMaskModel / the minimap diff internally).
+    const sinceRedrawMs = nowMs - this.lastFogRedrawMs;
+    if ((match.fogDirty && sinceRedrawMs >= FOG_REDRAW_MIN_MS) || sinceRedrawMs >= FOG_AGE_SWEEP_MS) {
       match.fogDirty = false;
       this.lastFogRedrawMs = nowMs;
-      const nowS = match.latestTick / TICK_RATE;
-      this.redrawFog(nowS);
+      this.fogLayers.update(match.fog, nowS);
       this.minimap.redraw(match.fog, nowS, you.x, you.y);
     }
     this.minimap.layout(this.app.screen.width);
@@ -225,7 +224,7 @@ export class GameRenderer {
    */
   private updateCompass(nowMs: number): void {
     const { maze, fog } = this.match;
-    if (!fog.everSeen(cellIndex(maze.width, maze.exit.x, maze.exit.y))) {
+    if (!fog.everSeen(this.exitIndex)) {
       this.compassG.visible = false;
       return;
     }
@@ -284,7 +283,8 @@ export class GameRenderer {
         this.itemsLayer.addChild(node);
       }
       node.position.set(v.x * TILE_PX, v.y * TILE_PX);
-      // Ghosts are dimmed on top of the fog overlay's own aging dimness.
+      // Ghosts get their own fixed dimming; they sit above the fog layers,
+      // so the "remembered, may be gone" look never depends on cell aging.
       node.alpha = v.ghost ? ITEM_GHOST_ALPHA : 1;
     }
     for (const [id, node] of this.itemNodes) {
@@ -295,35 +295,17 @@ export class GameRenderer {
     }
   }
 
-  /** Redraws the fog overlay, merging same-state runs per row into one rect. */
-  private redrawFog(nowS: number): void {
-    const { maze, fog } = this.match;
-    const g = this.fogG;
-    g.clear();
-    for (let y = 0; y < maze.height; y++) {
-      let runStart = 0;
-      let runState: FogStateId = fog.stateAt(cellIndex(maze.width, 0, y), nowS);
-      for (let x = 1; x <= maze.width; x++) {
-        const state: FogStateId =
-          x < maze.width ? fog.stateAt(cellIndex(maze.width, x, y), nowS) : FogState.Visible;
-        if (state === runState) continue;
-        this.fillFogRun(g, runStart, x, y, runState);
-        runStart = x;
-        runState = state;
-      }
-      this.fillFogRun(g, runStart, maze.width, y, runState);
-    }
-  }
-
-  private fillFogRun(g: Graphics, x0: number, x1: number, y: number, state: FogStateId): void {
-    if (x1 <= x0) return;
-    const { color, alpha } = FOG_OVERLAY[state];
-    if (alpha <= 0) return;
-    // Slight overdraw hides seams between fog rects and covers wall edges.
-    g.rect(x0 * TILE_PX - 2, y * TILE_PX - 2, (x1 - x0) * TILE_PX + 4, TILE_PX + 4).fill({
-      color,
-      alpha,
-    });
+  /**
+   * Your sprite's current on-screen position in canvas pixel coordinates:
+   * the world layer's (integer, camera-rounded) offset plus your world
+   * position — exactly what is drawn, so mouse aim stays correct even with
+   * the integer camera offsets (screen center is only an approximation).
+   */
+  youScreenPos(): { x: number; y: number } {
+    return {
+      x: this.world.position.x + this.youG.position.x,
+      y: this.world.position.y + this.youG.position.y,
+    };
   }
 
   /** Tears down the Pixi application and all display objects. */
@@ -331,6 +313,7 @@ export class GameRenderer {
     this.app.ticker.remove(this.frame);
     this.ripples.destroy();
     this.minimap.destroy();
+    this.fogLayers.destroy();
     this.app.destroy(true, { children: true, texture: true });
   }
 }

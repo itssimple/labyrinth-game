@@ -9,6 +9,7 @@ import { generateMaze } from "@echowake/mazegen";
 import type {
   ActionMsg,
   ClientMessage,
+  InputMsg,
   LobbyStateMsg,
   MatchEndMsg,
   MatchStartMsg,
@@ -18,9 +19,12 @@ import type {
 import { UiStore, type ChatEntry, type HudView } from "../app/store";
 import { AudioEngine } from "../audio/engine";
 import { FootstepCadence, type MoveMode } from "../audio/spatial";
+import { directionToMove, pickAim, pointerToAim, touchStickToMove, type Vec2 } from "../game/aim";
+import { pollGamepad } from "../game/gamepad";
 import { dropSlotIndex, hpDropped, pressSlot } from "../game/hud";
 import { InputTracker } from "../game/input";
 import { GameRenderer } from "../game/renderer";
+import { TouchSticks } from "../game/touch";
 import { createMatchView, type MatchView } from "../game/state";
 import { PING_INTERVAL_MS, smoothPing } from "./ping";
 import { serverUrlHost } from "./serverUrl";
@@ -41,6 +45,8 @@ const SOUND_QUEUE_MAX = 64;
 export class GameSession {
   readonly store = new UiStore();
   readonly keyboard = new InputTracker();
+  /** Twin virtual sticks; inert unless touch pointers arrive (touch-only). */
+  readonly touch = new TouchSticks();
   /** Presentation-only synthesized audio; unlocked by the first menu gesture. */
   readonly audio = new AudioEngine();
 
@@ -61,8 +67,16 @@ export class GameSession {
   /** Own-footstep bookkeeping (audio only): cadence + last snapshot position. */
   private readonly footsteps = new FootstepCadence();
   private lastYou: { x: number; y: number } | null = null;
-  /** Removes the canvas left-click=attack listener installed by mountGame. */
+  /** Removes the canvas pointer listeners installed by mountGame. */
   private detachPointer: (() => void) | null = null;
+  /**
+   * Last known mouse/pen position in canvas coordinates, null until the
+   * pointer actually moves over the canvas — keyboard-only play must omit
+   * aim so facing follows movement (server-side fallback).
+   */
+  private mousePx: Vec2 | null = null;
+  /** Last aim direction any source produced; once set, sent in every input. */
+  private lastAim: Vec2 | null = null;
 
   constructor() {
     // Discrete action keys (1-4 use/select, Q drop, Space attack) come from
@@ -292,6 +306,10 @@ export class GameSession {
     this.actionSeq = 0;
     this.footsteps.reset();
     this.lastYou = null;
+    // Fresh match, fresh aim: stale pointer coords from a previous canvas
+    // must not count as "the mouse has moved" for the keyboard-only fallback.
+    this.mousePx = null;
+    this.lastAim = null;
     this.keyboard.enabled = true;
     this.store.set({
       screen: "game",
@@ -456,9 +474,66 @@ export class GameSession {
       if (this.match === null || this.store.get().screen !== "game") return;
       // Eliminated: input is disabled (chat/Tab live outside the tracker).
       if (this.store.get().hud?.dead === true) return;
-      const sample = this.keyboard.read();
-      this.socket?.send({ type: "input", seq: ++this.inputSeq, ...sample });
+      this.socket?.send(this.sampleInput(this.match));
     }, 1000 / TICK_RATE);
+  }
+
+  /**
+   * One input sample: keyboard movement (falling back to gamepad left stick,
+   * then the touch move stick) plus aim from the highest-priority source
+   * this frame — gamepad right stick > touch aim stick > mouse pointer
+   * (direction from your sprite's on-screen position). Once any source has
+   * produced an aim, aimX/aimY ride along in every message; until then they
+   * are omitted so the server keeps facing following movement.
+   */
+  private sampleInput(match: MatchView): InputMsg {
+    const kb = this.keyboard.read();
+    let { moveX, moveY } = kb;
+    // keyboard.enabled=false means the chat overlay is open: the keyboard
+    // sample is already idle, and the analog sources go idle here too.
+    const pad = this.keyboard.enabled ? pollGamepad() : null;
+    if (moveX === 0 && moveY === 0 && this.keyboard.enabled) {
+      if (pad?.move != null) {
+        ({ moveX, moveY } = directionToMove(pad.move.x, pad.move.y));
+      } else {
+        // Walk-only for touch v1; sprint/sneak TODO (see game/touch.ts).
+        ({ moveX, moveY } = touchStickToMove(this.touch.readMove()));
+      }
+    }
+    const aim = pickAim(
+      pad?.aim ?? null,
+      this.keyboard.enabled ? this.touch.readAim() : null,
+      this.mouseAim(),
+    );
+    if (aim !== null) this.lastAim = aim;
+    const msg: InputMsg = {
+      type: "input",
+      seq: ++this.inputSeq,
+      moveX,
+      moveY,
+      sprint: kb.sprint,
+      sneak: kb.sneak,
+    };
+    if (this.lastAim !== null) {
+      msg.aimX = this.lastAim.x;
+      msg.aimY = this.lastAim.y;
+    }
+    // Presentation: the facing indicator mirrors what the server will do —
+    // aim wins; otherwise facing follows the movement direction.
+    if (this.lastAim !== null) {
+      match.localFacing = this.lastAim;
+    } else if (moveX !== 0 || moveY !== 0) {
+      const mag = Math.hypot(moveX, moveY);
+      match.localFacing = { x: moveX / mag, y: moveY / mag };
+    }
+    return msg;
+  }
+
+  /** Mouse aim: from your sprite's screen position toward the pointer. */
+  private mouseAim(): Vec2 | null {
+    if (this.mousePx === null || this.renderer === null) return null;
+    const you = this.renderer.youScreenPos();
+    return pointerToAim(this.mousePx.x, this.mousePx.y, you.x, you.y);
   }
 
   private stopInputLoop(): void {
@@ -494,12 +569,27 @@ export class GameSession {
     const token = ++this.mountToken;
     this.keyboard.attach();
     // Left-click on the game canvas = attack (attack() re-checks chat/dead).
+    // Touch pointers are excluded: they drive the virtual sticks instead
+    // (TODO touch v2: an on-screen attack button).
     const onPointerDown = (e: PointerEvent) => {
-      if (e.button === 0) this.attack();
+      if (e.button === 0 && e.pointerType !== "touch") this.attack();
+    };
+    // Mouse aim: remember the pointer in canvas coordinates. Only a real
+    // move arms it — keyboard-only play keeps aim omitted (facing follows
+    // movement). Touch never feeds mouse aim (it has its own aim stick).
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      const rect = container.getBoundingClientRect();
+      this.mousePx = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
     container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointermove", onPointerMove);
     this.detachPointer?.();
-    this.detachPointer = () => container.removeEventListener("pointerdown", onPointerDown);
+    this.detachPointer = () => {
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+    };
+    this.touch.attach(container);
     const renderer = await GameRenderer.create(container, match, this.audio, {
       onFps: (fps) => this.store.set({ fps }),
     });
@@ -515,6 +605,8 @@ export class GameSession {
     this.mountToken++;
     this.detachPointer?.();
     this.detachPointer = null;
+    this.touch.detach();
+    this.mousePx = null; // canvas is gone; stored pointer coords are stale
     this.keyboard.detach();
     this.keyboard.enabled = true;
     this.renderer?.destroy();

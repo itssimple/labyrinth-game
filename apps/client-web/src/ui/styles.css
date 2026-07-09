@@ -224,6 +224,36 @@ button.secondary {
 .game-canvas {
   position: absolute;
   inset: 0;
+  /* Touch drives the virtual sticks — never page scrolling/zooming. */
+  touch-action: none;
+}
+
+/* Twin virtual touch sticks (game/touch.ts): translucent base + knob pairs.
+   The overlay is display-only; pointer events go to the canvas host. */
+.touch-stick-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.touch-stick-base,
+.touch-stick-knob {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.touch-stick-base {
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.touch-stick-knob {
+  background: rgba(255, 255, 255, 0.22);
+  border: 2px solid rgba(255, 255, 255, 0.4);
 }
 
 .hud {

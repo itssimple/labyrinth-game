@@ -23,6 +23,13 @@ export interface MatchView {
   /** Tick of the most recent snapshot. */
   latestTick: number;
   escaped: boolean;
+  /**
+   * Your current facing (unit vector) as last derived from local input —
+   * aim source if any, else movement direction. Presentation only: it drives
+   * the little direction indicator on your sprite; the server keeps its own
+   * authoritative facing for the view cone.
+   */
+  localFacing: { x: number; y: number } | null;
 }
 
 /** Builds the match view for a fresh match, seeding "you" at your spawn. */
@@ -42,5 +49,6 @@ export function createMatchView(maze: Maze, endTick: number, spawnIndex: number)
     fogDirty: true,
     latestTick: 0,
     escaped: false,
+    localFacing: null,
   };
 }

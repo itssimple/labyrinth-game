@@ -121,8 +121,8 @@ export function GameScreen({ session, ui }: { session: GameSession; ui: UiState 
         <span className="ping">{fmtPing(ui.pingMs)}</span>
         <span className="fps">{ui.fps !== null ? `${ui.fps} fps` : ""}</span>
         <span style={{ marginLeft: "auto", color: "#666680", fontSize: 11 }}>
-          WASD move · Shift sprint · Ctrl/C sneak · Space/click attack · 1-4 items · Q drop ·
-          Enter chat · Tab players
+          WASD move · mouse/stick aim · Shift sprint · Ctrl/C sneak · Space/click attack · 1-4
+          items · Q drop · Enter chat · Tab players
         </span>
         <VolumeControl audio={session.audio} compact />
       </div>

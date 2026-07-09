@@ -43,11 +43,16 @@ export const ITEM_FALLBACK_COLOR = 0xbcbcc8;
 /** Alpha of remembered-item ghosts (fog overlay dims them further as it ages). */
 export const ITEM_GHOST_ALPHA = 0.55;
 
-/** Fog overlay per knowledge state (alpha 0 = fully bright / no overlay). */
-export const FOG_OVERLAY: Record<FogStateId, { color: number; alpha: number }> = {
-  [FogState.Visible]: { color: 0x000000, alpha: 0 },
-  [FogState.Recent]: { color: 0x05060c, alpha: 0.45 },
-  // Stale leans gray, approximating desaturation of the remembered tile.
-  [FogState.Stale]: { color: 0x101014, alpha: 0.8 },
-  [FogState.Unknown]: { color: 0x000000, alpha: 1 },
+/**
+ * Fog brightness per knowledge state (1 = fully bright, 0 = black). Drives
+ * the multiply-blend fog mask: visible cells render untouched, remembered
+ * cells dim as they age (Recent > Stale), unknown stays black. The blurred /
+ * desaturated look of remembered cells comes from the baked blur texture in
+ * foglayers.ts; these values only control how dark each state renders.
+ */
+export const FOG_BRIGHTNESS: Record<FogStateId, number> = {
+  [FogState.Visible]: 1,
+  [FogState.Recent]: 0.55,
+  [FogState.Stale]: 0.22,
+  [FogState.Unknown]: 0,
 };
