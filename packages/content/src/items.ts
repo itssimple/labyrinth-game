@@ -92,8 +92,17 @@ export function validateItemDef(def: ItemDef): void {
   }
   if (def.aura !== undefined) {
     checkPositive(def, "aura.radius", def.aura.radius, 32);
-    checkMul(def, "aura.damageTakenMul", def.aura.damageTakenMul);
-    checkMul(def, "aura.emittedSoundMul", def.aura.emittedSoundMul);
+    // Aura multipliers must be in (0, MUL_MAX]; both directions are
+    // meaningful — <1 dampens, >1 amplifies. The sim applies the strongest
+    // aura of each direction (auras never stack with each other), so an
+    // amplifying aura takes effect even alongside a dampening one. Exactly 0
+    // is rejected: a total-silence/immunity aura is a mod bug, not balance.
+    if (def.aura.damageTakenMul !== undefined) {
+      checkPositive(def, "aura.damageTakenMul", def.aura.damageTakenMul, MUL_MAX);
+    }
+    if (def.aura.emittedSoundMul !== undefined) {
+      checkPositive(def, "aura.emittedSoundMul", def.aura.emittedSoundMul, MUL_MAX);
+    }
     if (def.aura.damageTakenMul === undefined && def.aura.emittedSoundMul === undefined) {
       fail(def, "aura must define at least one of damageTakenMul / emittedSoundMul");
     }

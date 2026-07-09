@@ -7,7 +7,8 @@ consumer.** Shared types live in `@echowake/common` and
 
 Scope of the slice: Escape mode, 1–16 players, deterministic maze, fog of war
 with aging memory, visualized confidence-banded sound, authoritative server,
-WebSocket transport. No combat, no items, no bots yet (all are TODOs).
+WebSocket transport, server-side bots, and data-driven items, melee combat
+and charm auras (see "Items, combat & auras (v1)").
 
 Positions are in **tile units** (floats); a player at (3.5, 2.5) stands at the
 center of cell (3, 2). Cells are row-major: `index = y * width + x`.
@@ -111,11 +112,18 @@ export function computeVisibleCells(maze: Maze, x: number, y: number): Set<numbe
  * - effective intensity >= 0.6 → "high" (exact position, tight radius)
  *   >= 0.25 → "medium" (position jittered ~1.5 tiles)
  *   > threshold → "low" (position jittered ~4 tiles), else null.
- * - Jitter must be deterministic: seed from (matchSeed, sound.tick, sound.emitterId).
+ * - Jitter must be deterministic: seed from (matchSeed, sound.tick,
+ *   sound.emitterId, confidence band). The band is part of the seed so
+ *   listeners in DIFFERENT bands see different jitter — colluding clients
+ *   cannot intersect their perceived origins to solve for the exact one.
  *   The maze seed is public (broadcast in matchStart), so the server passes a
  *   secret per-match salt as `matchSeed` — never the public seed, and the salt
  *   is never sent to clients — otherwise a modified client could re-derive the
  *   jitter and recover exact sound origins (a wallhack).
+ * - The returned intensity is quantized to 0.1 buckets (after the audibility
+ *   check, so quantization never resurrects an inaudible sound); the raw
+ *   value stays internal to band selection — an exact intensity would let a
+ *   client invert the falloff and undo the jitter.
  */
 export function perceiveSound(
   maze: Maze,
@@ -335,10 +343,13 @@ module load (throw on nonsense) so bad mods fail loudly.
 
 ### @echowake/ecs additions
 
-`createSimulation({ maze, seed, items?: readonly ItemDef[] })` — when `items`
-is provided, spawn floor items deterministically from the seed: about
-`cells / CELLS_PER_ITEM` items, def picked by spawnWeight, never on spawn or
-exit cells, spread out. Omitted => no items (existing tests unaffected).
+`createSimulation({ maze, seed, items?: readonly ItemDef[], itemSeed?: string })`
+— when `items` is provided, spawn floor items deterministically from
+`itemSeed ?? seed`: about `cells / CELLS_PER_ITEM` items, def picked by
+spawnWeight, never on spawn or exit cells, spread out. Omitted => no items
+(existing tests unaffected). The server passes its secret per-match salt as
+`itemSeed` — the maze seed is public, and item placements seeded from it
+alone could be derived offline without exploring.
 
 ```ts
 export type PlayerAction = { action: "attack" | "use" | "drop"; slot?: number };
@@ -360,13 +371,16 @@ Rules (all deterministic, all inside the sim):
   test against alive players within MELEE_RANGE and MELEE_HALF_ARC of facing,
   walls block (no hitting through walls — check LOS between the two positions
   with gridLine). Damage = weapon damage (best weapon in inventory, else
-  FISTS) x target's armor damageTakenMul x any warding aura within radius of
-  the TARGET. Cooldown per player from the weapon used. Swing emits
-  melee-swing at the attacker; a connected hit ALSO emits melee-hit at the
-  target. Multiple targets in arc: only the nearest is hit.
+  FISTS) x target's armor damageTakenMul x the aura result at the TARGET's
+  position (see the aura rule below). Cooldown per player from the weapon
+  used. Swing emits melee-swing at the attacker; a connected hit ALSO emits
+  melee-hit at the target. Multiple targets in arc: only the nearest is hit.
 - Pickup: walking within 0.5 tiles of a floor item auto-picks into the first
   free slot (none free => item stays), emits pickup sound, reported in
-  TickResult.pickups.
+  TickResult.pickups. Drop-lock hysteresis: a just-dropped item is locked to
+  its dropper until they move ~0.75 tiles away (DROP_RELOCK_RELEASE_RANGE),
+  so it doesn't bounce straight back into their inventory; other players can
+  pick it up immediately.
 - use(bandage): +healHp clamped to MAX_HP, consumes the item. use(noisemaker):
   consumes it and places an emitter at the player's position: emits
   footstep-walk (kind exactly matches real walking — deception by design) at
@@ -374,8 +388,13 @@ Rules (all deterministic, all inside the sim):
 - drop: item leaves slot to the floor at the player's position.
 - Footstep emission intensity multiplier: armor footstepMul x boots
   footstepMul. Emitted-sound aura (veil): every sound whose ORIGIN is within
-  radius of a bearer gets intensity x emittedSoundMul (applies to noisemakers
-  too). Multipliers stack multiplicatively; clamp final intensity to [0, 1].
+  radius of a bearer gets intensity x the aura result (applies to noisemakers
+  too). Stacking rules: multipliers from CARRIED gear stack multiplicatively
+  (armor x boots etc.); charm AURAS never stack with each other — at most one
+  aura per direction applies: (strongest dampening aura in range, i.e. lowest
+  mul < 1) x (strongest amplifying aura in range, i.e. highest mul > 1). The
+  aura result combines multiplicatively with the carried-gear product; clamp
+  final intensity to [0, 1].
 - Death: hp <= 0 => dead; drop entire inventory on the floor at the death
   position; dead players stop simulating (like escaped) and are reported in
   TickResult.deaths once. No respawns in Escape v1.
@@ -480,6 +499,6 @@ Client (apps/client-web) server-URL resolution, in priority order:
 
 ## Out of scope for the slice (leave TODOs, do not implement)
 
-Bots/AI, combat, items/equipment, voice, prediction & lag compensation, binary
-protocol, persistence (PostgreSQL/Redis), auth (JWT), Electron/Capacitor
-wrappers, modding hooks, matchmaking, metrics/admin API.
+Voice, prediction & lag compensation, binary protocol, persistence
+(PostgreSQL/Redis), auth (JWT), Electron/Capacitor wrappers, modding hooks,
+matchmaking.

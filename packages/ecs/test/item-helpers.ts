@@ -52,6 +52,12 @@ export const DEFS = {
     kind: "charm",
     aura: { radius: 3, damageTakenMul: 0.5 },
   } as ItemDef,
+  cursedCharm: {
+    id: "test-cursed",
+    name: "Test Cursed Charm",
+    kind: "charm",
+    aura: { radius: 3, damageTakenMul: 1.5 },
+  } as ItemDef,
   veilCharm: {
     id: "test-veil",
     name: "Test Veil Charm",

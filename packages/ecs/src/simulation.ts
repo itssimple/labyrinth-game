@@ -153,11 +153,17 @@ const MAX_ACTION_QUEUE = 8;
  * @echowake/content) enables the combat/item systems and seeds deterministic
  * floor item spawns. Omitted => no items and no combat: byte-for-byte the
  * pre-items behavior.
+ *
+ * `itemSeed` (default: `seed`) seeds the floor item placement separately.
+ * The maze seed is broadcast to every client, so a server that wants item
+ * locations to be earned knowledge (not derivable offline) passes a secret
+ * per-match salt here — the Echowake server passes its jitter salt.
  */
 export function createSimulation(opts: {
   maze: Maze;
   seed: string;
   items?: readonly ItemDef[];
+  itemSeed?: string;
 }): Simulation {
   const { maze } = opts;
   const world = createWorld();
@@ -170,7 +176,7 @@ export function createSimulation(opts: {
   const floor: FloorItemRec[] = [];
   let nextFloorId = 1;
   if (itemsEnabled && opts.items) {
-    for (const p of planItemSpawns(maze, opts.items, opts.seed)) {
+    for (const p of planItemSpawns(maze, opts.items, opts.itemSeed ?? opts.seed)) {
       floor.push({ id: nextFloorId++, item: p.item, x: p.x, y: p.y, lockSlot: -1 });
     }
   }
@@ -194,17 +200,21 @@ export function createSimulation(opts: {
   };
 
   /**
-   * Strongest single aura multiplier of `key` at position (x, y): the lowest
-   * value among charms carried by active players whose aura radius covers the
-   * position (bearer included). Auras never stack with each other — one aura,
-   * the strongest, applies (README / CONTRACTS).
+   * Combined aura multiplier of `key` at position (x, y), over charms carried
+   * by active players whose aura radius covers the position (bearer
+   * included). Auras never stack with each other: at most ONE aura per
+   * direction applies — the strongest dampening aura (lowest multiplier < 1)
+   * times the strongest amplifying aura (highest multiplier > 1) — so two
+   * warding charms are no better than the best one, but a curse-style
+   * amplifier still bites through a ward (README / CONTRACTS).
    */
   const strongestAuraMul = (
     x: number,
     y: number,
     key: "damageTakenMul" | "emittedSoundMul",
   ): number => {
-    let mul = 1;
+    let damp = 1; // strongest dampening aura in range (lowest mul < 1)
+    let amp = 1; // strongest amplifying aura in range (highest mul > 1)
     for (let s = 0; s < MAX_PLAYERS; s++) {
       if (!isActive(s)) continue;
       const cs = combat[s];
@@ -217,10 +227,12 @@ export function createSimulation(opts: {
         const aura = defs.get(id)?.aura;
         const v = aura?.[key];
         if (aura === undefined || v === undefined) continue;
-        if (distSq(x, y, bx, by) <= aura.radius * aura.radius && v < mul) mul = v;
+        if (distSq(x, y, bx, by) > aura.radius * aura.radius) continue;
+        if (v < damp) damp = v;
+        if (v > amp) amp = v;
       }
     }
-    return mul;
+    return damp * amp;
   };
 
   /** Drop the whole inventory on the floor at (x, y) — death, no re-pickup lock. */
@@ -524,8 +536,9 @@ export function createSimulation(opts: {
         const tcs = combat[target] as CombatSlot;
         const tx = Position.x[targetEid] as number;
         const ty = Position.y[targetEid] as number;
-        // Damage pipeline: weapon x target's carried armor x strongest warding
-        // aura covering the TARGET's position (auras do not stack).
+        // Damage pipeline: weapon x target's carried armor x aura result at
+        // the TARGET's position (strongest dampening x strongest amplifying
+        // aura — auras do not stack with each other).
         let damage = weapon.damage ?? 0;
         damage *= inventoryMul(tcs.inventory, defs, "damageTakenMul");
         damage *= strongestAuraMul(tx, ty, "damageTakenMul");

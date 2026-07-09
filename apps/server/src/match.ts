@@ -80,10 +80,11 @@ export class Match {
   private readonly lobby: Lobby;
   private readonly seed: string;
   /**
-   * Secret seed for perceiveSound jitter. The maze seed is broadcast to every
-   * client in matchStart, so jitter seeded from it alone could be re-derived
-   * by a modified client to recover exact sound origins (a wallhack). The
-   * random salt never appears in any outbound message.
+   * Secret seed for perceiveSound jitter AND floor item placement. The maze
+   * seed is broadcast to every client in matchStart, so anything seeded from
+   * it alone could be re-derived by a modified client — exact sound origins
+   * (a wallhack) or every item location before ever seeing one. The random
+   * salt never appears in any outbound message.
    */
   private readonly jitterSeed: string;
   private readonly sim: Simulation;
@@ -118,7 +119,14 @@ export class Match {
     this.maze = generateMaze(this.options);
     // Item definitions are injected here (content -> ecs, never the reverse):
     // the simulation stays moddable while the stock server ships the v1 set.
-    this.sim = createSimulation({ maze: this.maze, seed: this.seed, items: ITEM_DEFS });
+    // Item placement is seeded from the SECRET salt, not the public maze
+    // seed — item locations must be earned by exploring, not derived offline.
+    this.sim = createSimulation({
+      maze: this.maze,
+      seed: this.seed,
+      items: ITEM_DEFS,
+      itemSeed: this.jitterSeed,
+    });
     for (const client of lobby.clients) {
       const slot = this.sim.addPlayer();
       this.players.set(client.playerId, {

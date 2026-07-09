@@ -24,6 +24,27 @@ describe("floor item spawning", () => {
     expect(a.listFloorItems()).toEqual(b.listFloorItems());
   });
 
+  it("itemSeed decouples item placement from the public maze seed", () => {
+    const base = createSimulation({ maze: makeMaze(), seed: "spawn-seed", items: ALL_DEFS });
+    const salted = createSimulation({
+      maze: makeMaze(),
+      seed: "spawn-seed",
+      items: ALL_DEFS,
+      itemSeed: "secret-salt",
+    });
+    const saltedOtherPublic = createSimulation({
+      maze: makeMaze(),
+      seed: "other-public-seed",
+      items: ALL_DEFS,
+      itemSeed: "secret-salt",
+    });
+    // same seed, different itemSeed => different placements (a client knowing
+    // only the broadcast maze seed cannot derive where the loot is)
+    expect(salted.listFloorItems()).not.toEqual(base.listFloorItems());
+    // same itemSeed => identical placements, whatever the public seed says
+    expect(salted.listFloorItems()).toEqual(saltedOtherPublic.listFloorItems());
+  });
+
   it("never spawns on spawn or exit cells, and spreads items out", () => {
     for (let i = 0; i < 10; i++) {
       const maze = makeMaze();

@@ -42,9 +42,9 @@ describe("perceiveSound", () => {
     const sound = sprintStep(0.5, 0.5);
     const throughWall = perceiveSound(walled, "m", sound, 1.5, 0.5);
     const throughOpen = perceiveSound(open, "m", sound, 1.5, 0.5);
-    expect(throughOpen?.intensity).toBeCloseTo(0.75, 10);
-    // Stone wall: 0.8 - 0.05 (distance) - 0.5 (wall) = 0.25
-    expect(throughWall?.intensity).toBeCloseTo(0.25, 10);
+    expect(throughOpen?.intensity).toBeCloseTo(0.8, 10); // raw 0.75, quantized
+    // Stone wall: 0.8 - 0.05 (distance) - 0.5 (wall) = 0.25, quantized to 0.3
+    expect(throughWall?.intensity).toBeCloseTo(0.3, 10);
     expect(throughWall!.intensity).toBeLessThan(throughOpen!.intensity);
     expect(throughWall?.confidence).toBe("medium");
   });
@@ -56,7 +56,17 @@ describe("perceiveSound", () => {
     const maze = makeOpenMaze(3, 3);
     addWall(maze, 0, 0, WALL_E);
     const p = perceiveSound(maze, "m", sprintStep(0.5, 0.5), 1.5, 0.5);
-    expect(p?.intensity).toBeCloseTo(0.8 - 3 * 0.05, 10);
+    expect(p?.intensity).toBeCloseTo(0.7, 10); // raw 0.8 - 3 * 0.05, quantized
+  });
+
+  it("reports intensity quantized to 0.1 buckets; band selection uses the raw value", () => {
+    const maze = makeOpenMaze(20, 1);
+    // 5 tiles: raw 0.55 reports as 0.6, but the band stays medium (raw < 0.6)
+    const p = perceiveSound(maze, "m", sprintStep(0.5, 0.5), 5.5, 0.5);
+    expect(p?.intensity).toBeCloseTo(0.6, 10);
+    expect(p?.confidence).toBe("medium");
+    // quantization never resurrects an inaudible sound (15 tiles: raw 0.05)
+    expect(perceiveSound(maze, "m", sprintStep(0.5, 0.5), 15.5, 0.5)).toBeNull();
   });
 
   it("quiet sounds behind walls are inaudible (null)", () => {
@@ -117,5 +127,17 @@ describe("perceiveSound", () => {
     expect([otherTick?.x, otherTick?.y]).not.toEqual([a?.x, a?.y]);
     expect([otherEmitter?.x, otherEmitter?.y]).not.toEqual([a?.x, a?.y]);
     expect([otherSeed?.x, otherSeed?.y]).not.toEqual([a?.x, a?.y]);
+  });
+
+  it("listeners in different confidence bands get different jitter (no cross-band triangulation)", () => {
+    const maze = makeOpenMaze(20, 3);
+    const sound = sprintStep(16.5, 1.5, 42, 3);
+    const medium = perceiveSound(maze, "seed-A", sound, 10.5, 1.5); // 6 tiles → raw 0.5
+    const low = perceiveSound(maze, "seed-A", sound, 3.5, 1.5); // 13 tiles → raw 0.15
+    expect(medium?.confidence).toBe("medium");
+    expect(low?.confidence).toBe("low");
+    // The band is part of the jitter seed: colluding clients in different
+    // bands cannot intersect their perceived origins to solve for the truth.
+    expect([low?.x, low?.y]).not.toEqual([medium?.x, medium?.y]);
   });
 });

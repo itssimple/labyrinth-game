@@ -302,12 +302,19 @@ Items spawn deterministically from the match seed, scattered through the
 labyrinth (never on spawn cells), and are visible only in line of sight —
 remembered item locations go stale like everything else. Walk over an item to
 pick it up (4 inventory slots); drop with Q; use consumables with number keys.
+You can't instantly re-grab what you just dropped — step away first (other
+players can take it immediately).
 PvP damage is enabled in Escape mode: fights are loud, and death drops
 everything you carry where you fell. Eliminated players are out of the match
 but see their final view until it ends.
 
-Damage reductions and sound multipliers stack multiplicatively. One melee
-swing at a time (cooldown); attacks and hits are loud, high-confidence sounds.
+Multipliers from carried gear stack multiplicatively (armor x boots, etc.).
+Charm auras do NOT stack with each other: at most one aura per direction
+applies — the strongest dampening aura (lowest multiplier below 1) and the
+strongest amplifying aura (highest multiplier above 1) — and that one-per-
+direction aura result combines multiplicatively with the carried-gear
+product. One melee swing at a time (cooldown); attacks and hits are loud,
+high-confidence sounds.
 
 The v1 item set (all data-driven in `packages/content` — mods replace or
 extend the definitions without touching game code):

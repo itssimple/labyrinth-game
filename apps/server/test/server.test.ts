@@ -641,25 +641,29 @@ describe("items and combat", () => {
     await p.client.closed;
   });
 
-  it("snapshots report floor items exactly when they are in line of sight", async () => {
-    // Search for a tiny seed where, from spawn 0, at least one floor item is
-    // visible AND at least one is hidden — the interesting case on both sides.
-    // Ground truth comes from a local simulation with the same maze/seed/defs:
-    // item spawning is deterministic, so it matches the server's exactly.
+  it("snapshots only report floor items in line of sight, never the public-seed placement", async () => {
+    // Item placement is seeded from the server's SECRET per-match salt, so
+    // the exact layout is deliberately NOT derivable here — deriving it from
+    // the broadcast maze seed used to be an offline loot map (and is exactly
+    // what this test now proves impossible). Search for a tiny seed whose
+    // PUBLIC-seed placement WOULD put at least one item in sight of spawn 0,
+    // then show the server reports something else.
     let found: {
       seed: string;
-      truth: { id: number; item: string; x: number; y: number }[];
+      predictedInLos: { id: number; item: string; x: number; y: number }[];
     } | null = null;
     for (let i = 0; i < 2000 && !found; i++) {
       const seed = `items-itest-${i}`;
       const maze = generateMaze({ seed, size: "tiny" });
       const spawn = maze.spawns[0]!;
       const vis = computeVisibleCells(maze, spawn.x + 0.5, spawn.y + 0.5);
-      const truth = createSimulation({ maze, seed, items: ITEM_DEFS }).listFloorItems();
-      const inLos = truth.filter((fi) =>
+      const predicted = createSimulation({ maze, seed, items: ITEM_DEFS }).listFloorItems();
+      const inLos = predicted.filter((fi) =>
         vis.has(cellIndex(maze.width, Math.floor(fi.x), Math.floor(fi.y))),
       );
-      if (inLos.length > 0 && inLos.length < truth.length) found = { seed, truth };
+      if (inLos.length > 0 && inLos.length < predicted.length) {
+        found = { seed, predictedInLos: inLos };
+      }
     }
     expect(found).not.toBeNull();
 
@@ -669,29 +673,56 @@ describe("items and combat", () => {
     host.client.send({ type: "startMatch", options: { seed: found!.seed, size: "tiny" } });
     const start = await host.client.next("matchStart");
     expect(start.yourSpawnIndex).toBe(0);
-
-    const snap: SnapshotMsg = await host.client.next("snapshot");
-    // Combat state is live from tick 1.
-    expect(snap.you.hp).toBe(MAX_HP);
-    expect(snap.you.dead).toBe(false);
-    expect(snap.inventory).toEqual([null, null, null, null]);
-
-    // visibleItems must be EXACTLY the ground-truth floor items whose cell is
-    // in this client's visibleCells — nothing hidden leaks, nothing seen is
-    // missing (ids included: both sims assign them deterministically).
-    const visible = new Set(snap.visibleCells);
     const maze = generateMaze(start.options);
-    const expected = found!.truth
-      .filter((fi) => visible.has(cellIndex(maze.width, Math.floor(fi.x), Math.floor(fi.y))))
-      .sort((a, b) => a.id - b.id);
-    const actual = [...snap.visibleItems].sort((a, b) => a.id - b.id);
-    expect(actual).toEqual(expected);
-    expect(expected.length).toBeGreaterThan(0);
-    expect(expected.length).toBeLessThan(found!.truth.length); // some stay hidden
+
+    const first: SnapshotMsg = await host.client.next("snapshot");
+    // Combat state is live from tick 1.
+    expect(first.you.hp).toBe(MAX_HP);
+    expect(first.you.dead).toBe(false);
+    expect(first.inventory).toEqual([null, null, null, null]);
+
+    // The public-seed prediction must NOT come true (a modified client
+    // running the same derivation learns nothing). Equality by chance would
+    // need the secret-salted layout to reproduce the predicted ids AND
+    // positions exactly — negligible odds, and any real regression back to
+    // seeding from the public seed fails this deterministically.
+    const firstItems = [...first.visibleItems].sort((a, b) => a.id - b.id);
+    expect(firstItems).not.toEqual(found!.predictedInLos.sort((a, b) => a.id - b.id));
+
+    // While walking around, every snapshot obeys the visibility rules:
+    // reported items sit in this client's visibleCells (knowledge is earned,
+    // nothing outside line of sight ever leaks), are valid v1 defs at cell
+    // centers, and never on a spawn or exit cell (spawn rules).
+    const forbidden = new Set([
+      ...maze.spawns.map((s) => cellIndex(maze.width, s.x, s.y)),
+      cellIndex(maze.width, maze.exit.x, maze.exit.y),
+    ]);
+    const knownIds = new Set(ITEM_DEFS.map((d) => d.id));
+    let seq = 1;
+    for (let i = 0; i < 40; i++) {
+      host.client.send({
+        type: "input",
+        seq: seq++,
+        moveX: i % 4 < 2 ? 1 : 0,
+        moveY: i % 4 < 2 ? 0 : 1,
+        sprint: false,
+        sneak: false,
+      });
+      const snap: SnapshotMsg = await host.client.next("snapshot");
+      const visible = new Set(snap.visibleCells);
+      for (const fi of snap.visibleItems) {
+        const cell = cellIndex(maze.width, Math.floor(fi.x), Math.floor(fi.y));
+        expect(visible.has(cell)).toBe(true);
+        expect(forbidden.has(cell)).toBe(false);
+        expect(knownIds.has(fi.item)).toBe(true);
+        expect(fi.x % 1).toBeCloseTo(0.5, 10); // items rest at cell centers
+        expect(fi.y % 1).toBeCloseTo(0.5, 10);
+      }
+    }
 
     host.client.close();
     await host.client.closed;
-  });
+  }, 15000);
 
   it("melee combat: hp drops, cooldowns resist spam, death eliminates, dead spectate", async () => {
     const seed = "combat-itest-1";

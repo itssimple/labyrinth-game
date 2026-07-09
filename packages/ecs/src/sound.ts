@@ -126,9 +126,17 @@ function propagationCost(
  * >= 0.6 → "high" (exact position), >= 0.25 → "medium" (~1.5 tile jitter),
  * > SOUND_MIN_AUDIBLE → "low" (~4 tile jitter), otherwise null.
  * Jitter is deterministic, seeded from (matchSeed, sound.tick,
- * sound.emitterId) — every listener agrees on the (jittered) origin, and
- * replays reproduce it exactly. Note: emitterId of simulation footsteps is
- * the player slot, which is stable across sim instances.
+ * sound.emitterId, confidence band) — listeners in the same band agree on the
+ * (jittered) origin, listeners in different bands see different jitter (so
+ * colluding clients cannot solve for the exact origin), and replays reproduce
+ * it exactly. Note: emitterId of simulation footsteps is the player slot,
+ * which is stable across sim instances.
+ *
+ * The returned intensity is quantized to 0.1 buckets (after the audibility
+ * check, so quantization can never resurrect an inaudible sound); the raw
+ * value stays internal to the confidence-band selection. An exact intensity
+ * would let a modified client invert the distance falloff and undo the
+ * position jitter.
  */
 export function perceiveSound(
   maze: Maze,
@@ -159,10 +167,16 @@ export function perceiveSound(
     confidence = intensity >= 0.25 ? "medium" : "low";
     const radius =
       confidence === "medium" ? SOUND_JITTER_TILES.medium : SOUND_JITTER_TILES.low;
-    const rng = createRng(`${matchSeed}:${sound.tick}:${sound.emitterId}`);
+    // The confidence band is part of the seed: listeners in different bands
+    // get different jitter, so two colluding clients can't intersect their
+    // perceived origins to recover the exact one.
+    const rng = createRng(`${matchSeed}:${sound.tick}:${sound.emitterId}:${confidence}`);
     x = clamp(x + (rng.next() * 2 - 1) * radius, 0, maze.width);
     y = clamp(y + (rng.next() * 2 - 1) * radius, 0, maze.height);
   }
 
-  return { kind: sound.kind, x, y, confidence, intensity, tick: sound.tick };
+  // Quantize AFTER the band choice and audibility check: the raw intensity
+  // stays internal, the wire value is too coarse to invert the falloff.
+  const reported = Math.round(intensity * 10) / 10;
+  return { kind: sound.kind, x, y, confidence, intensity: reported, tick: sound.tick };
 }

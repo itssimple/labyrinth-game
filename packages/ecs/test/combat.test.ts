@@ -219,6 +219,36 @@ describe("damage pipeline (armor + auras)", () => {
     expect(sim.step().hits).toEqual([{ attacker: 0, target: 1, damage: 5 }]);
   });
 
+  it("applies one aura per direction: strongest dampening x strongest amplifying", () => {
+    const maze = makeOpenMaze(16, 15, {
+      spawns: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+      ],
+      exit: { x: 15, y: 14 },
+    });
+    const sim = findSeed(
+      (seed) => {
+        const s = createSimulation({
+          maze,
+          seed,
+          items: [DEFS.wardingCharm, DEFS.cursedCharm],
+        });
+        s.addPlayer();
+        s.addPlayer();
+        return s;
+      },
+      (s) => hasOneOfEach(s, [DEFS.wardingCharm.id, DEFS.cursedCharm.id]),
+    );
+    collectAllFloorItems(sim, 1); // victim carries a ward (x0.75) AND a curse (x1.5)
+    steerTo(sim, 1, 2.5, 1.5);
+    sim.act(0, { action: "attack" });
+    // 10 x 0.75 (strongest dampening) x 1.5 (strongest amplifying) = 11.25 —
+    // the amplifier bites through the ward instead of being ignored.
+    expect(sim.step().hits).toEqual([{ attacker: 0, target: 1, damage: 11.25 }]);
+    expect(sim.getPlayerState(1).hp).toBe(100 - 11.25);
+  });
+
   it("the best carried weapon is used", () => {
     const maze = makeOpenMaze(7, 7, {
       spawns: [

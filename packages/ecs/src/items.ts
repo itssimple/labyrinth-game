@@ -127,7 +127,8 @@ export function planItemSpawns(
 /**
  * Product of `footstepMul` / `damageTakenMul` over every carried item —
  * multipliers from carried items stack multiplicatively (README). Charm auras
- * are handled separately (strongest single aura only).
+ * are handled separately (they never stack: strongest dampening x strongest
+ * amplifying aura only — see strongestAuraMul in simulation.ts).
  */
 export function inventoryMul(
   inventory: readonly (string | null)[],
