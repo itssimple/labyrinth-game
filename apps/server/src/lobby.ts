@@ -31,6 +31,8 @@ export class Lobby {
   readonly bots: LobbyBot[] = [];
   /** The running match, or null while in the pre-match lobby screen. */
   match: Match | null = null;
+  /** True when the host has listed this lobby in the public browser. */
+  isPublic = false;
 
   private readonly registry: LobbyRegistry;
 
@@ -120,6 +122,7 @@ export class Lobby {
       type: "lobbyState",
       code: this.code,
       hostId: this.hostId,
+      isPublic: this.isPublic,
       players: [
         ...this.clients.map((c) => ({ playerId: c.playerId, name: c.name, isBot: false })),
         ...this.bots.map((b) => ({ playerId: b.playerId, name: b.name, isBot: true })),

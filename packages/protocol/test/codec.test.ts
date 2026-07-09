@@ -40,6 +40,7 @@ const serverMessages: ServerMessage[] = [
     type: "lobbyState",
     code: "WXYZ",
     hostId: "p-123",
+    isPublic: false,
     players: [{ playerId: "p-123", name: "Ariadne", isBot: false }],
   },
   {

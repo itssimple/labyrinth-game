@@ -66,6 +66,24 @@ export interface RemoveBotMsg {
   playerId: string;
 }
 
+/** Latency probe; the server echoes `t` back verbatim in a pong. */
+export interface PingMsg {
+  type: "ping";
+  /** Client-chosen timestamp/counter; opaque to the server. */
+  t: number;
+}
+
+/** Host only. Lists (or unlists) the lobby in the public lobby browser. */
+export interface SetLobbyPublicMsg {
+  type: "setLobbyPublic";
+  isPublic: boolean;
+}
+
+/** Requests the current public lobby list. */
+export interface ListLobbiesMsg {
+  type: "listLobbies";
+}
+
 export type ClientMessage =
   | HelloMsg
   | CreateLobbyMsg
@@ -75,7 +93,10 @@ export type ClientMessage =
   | InputMsg
   | ChatMsg
   | AddBotMsg
-  | RemoveBotMsg;
+  | RemoveBotMsg
+  | PingMsg
+  | SetLobbyPublicMsg
+  | ListLobbiesMsg;
 
 // ---------------------------------------------------------------------------
 // Server -> Client
@@ -112,6 +133,29 @@ export interface LobbyStateMsg {
   code: string;
   hostId: string;
   players: LobbyPlayerInfo[];
+  /** True when the host has listed this lobby in the public browser. */
+  isPublic: boolean;
+}
+
+/** Echo of a client ping; `t` is returned verbatim for RTT measurement. */
+export interface PongMsg {
+  type: "pong";
+  t: number;
+}
+
+/** One entry in the public lobby browser. Only public lobbies appear. */
+export interface PublicLobbyInfo {
+  code: string;
+  hostName: string;
+  playerCount: number;
+  botCount: number;
+  /** Mid-match lobbies are shown but cannot be joined yet. */
+  inMatch: boolean;
+}
+
+export interface LobbyListMsg {
+  type: "lobbyList";
+  lobbies: PublicLobbyInfo[];
 }
 
 /**
@@ -172,4 +216,6 @@ export type ServerMessage =
   | MatchStartMsg
   | SnapshotMsg
   | MatchEndMsg
-  | ChatBroadcastMsg;
+  | ChatBroadcastMsg
+  | PongMsg
+  | LobbyListMsg;

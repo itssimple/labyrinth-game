@@ -43,6 +43,8 @@ const SERVER_TYPES: ReadonlySet<string> = new Set([
   "snapshot",
   "matchEnd",
   "chatBroadcast",
+  "pong",
+  "lobbyList",
 ]);
 
 /** True if v is a plain non-null, non-array object. */
@@ -152,6 +154,18 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
     }
     case "addBot":
       return { type: "addBot" };
+    case "ping": {
+      const { t } = parsed;
+      if (!isFiniteNumber(t)) return null;
+      return { type: "ping", t };
+    }
+    case "setLobbyPublic": {
+      const { isPublic } = parsed;
+      if (typeof isPublic !== "boolean") return null;
+      return { type: "setLobbyPublic", isPublic };
+    }
+    case "listLobbies":
+      return { type: "listLobbies" };
     case "removeBot": {
       const { playerId } = parsed;
       if (typeof playerId !== "string" || playerId.length < 1 || playerId.length > PLAYER_ID_MAX)

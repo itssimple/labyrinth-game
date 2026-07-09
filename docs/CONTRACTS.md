@@ -295,6 +295,45 @@ overlay, sends `chat`.
 Suggested layout: `src/net/` (socket wrapper), `src/game/` (Pixi renderer, fog
 memory, ripples), `src/ui/` (React screens), `src/main.tsx` (wiring).
 
+## Latency, lobby browser (server), and client audio
+
+Ping: any hello'd client may send `ping {t}`; the server replies `pong {t}`
+verbatim, immediately, outside the lobby/match logic (still rate-limited).
+Clients ping every ~2s and show smoothed RTT in the HUD.
+
+Public lobby browser: lobbies are PRIVATE by default (codes are join
+secrets). The host may send `setLobbyPublic {isPublic}` (non-host => notHost);
+state is reflected in `lobbyState.isPublic` and shown as a host-only toggle in
+the lobby UI. Any hello'd client may send `listLobbies` and gets `lobbyList`
+with up to 50 public lobbies (sorted: joinable first, then by playerCount
+desc): `{code, hostName, playerCount (humans), botCount, inMatch}`. Client UI:
+a "Browse public games" screen from the main menu — list with join buttons
+(disabled while inMatch), refresh, and empty-state text. A public mid-match
+lobby stays listed but is not joinable (existing matchAlreadyStarted rule).
+
+HUD additions (client only): smoothed ping (from pong RTT), FPS counter,
+hold-Tab player list overlay (names from lobby roster; no positions — the
+snapshot stays the only source of who is where), and a compass edge-arrow
+pointing to the exit once its cell has entered fog memory (Visible or
+remembered), hidden before that. Nothing in the HUD may reveal information the
+snapshot doesn't already contain.
+
+Audio ("Sound is gameplay", README): client-only, Web Audio API, ZERO external
+assets — all sounds synthesized (filtered noise bursts for footsteps, pitched
+by SoundKind; door thunk; scream; explosion rumble). Sources:
+
+1. PerceivedSound events already drained by the renderer — positional: stereo
+   pan from direction (perceived x,y relative to you), gain from intensity,
+   muffled lowpass at low confidence. Occlusion is already baked into
+   intensity by the server; do not re-derive it.
+2. Own movement — synthesize your own footsteps locally from snapshot `you`
+   movement (the server never echoes your own sounds); cadence by move mode.
+
+AudioContext must resume on first user gesture (browser autoplay policy).
+Settings: master volume slider + mute in the menu and the game HUD, persisted
+to localStorage `echowake.volume` / `echowake.muted`. Audio is presentation
+only — nothing gameplay-affecting may live in the audio layer.
+
 ## Deployment (public dedicated server)
 
 One deployable: the dedicated server also serves the built web client, so a
