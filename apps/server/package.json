@@ -1,0 +1,29 @@
+{
+  "name": "@labyrinth/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.0.0",
+    "@labyrinth/bots": "workspace:*",
+    "@labyrinth/common": "workspace:*",
+    "@labyrinth/ecs": "workspace:*",
+    "@labyrinth/math": "workspace:*",
+    "@labyrinth/mazegen": "workspace:*",
+    "@labyrinth/protocol": "workspace:*",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}
