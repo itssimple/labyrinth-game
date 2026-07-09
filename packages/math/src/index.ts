@@ -1,3 +1,4 @@
-// TODO(phase 1): deterministic seeded RNG, grid line-of-sight helpers.
-// API is specified in docs/CONTRACTS.md — implement exactly that surface.
-export {};
+export { hashString } from "./hash.js";
+export { createRng, type Rng } from "./rng.js";
+export { gridLine, type GridPoint } from "./grid.js";
+export { clamp, distSq } from "./scalar.js";

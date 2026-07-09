@@ -1,3 +1,9 @@
-// TODO(phase 1): deterministic ECS simulation (movement, collision, vision,
-// sound propagation, Escape objective). API in docs/CONTRACTS.md.
-export {};
+export {
+  createSimulation,
+  type PlayerInput,
+  type PlayerState,
+  type Simulation,
+  type TickResult,
+} from "./simulation.js";
+export { computeVisibleCells } from "./vision.js";
+export { perceiveSound } from "./sound.js";
