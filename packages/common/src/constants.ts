@@ -15,6 +15,15 @@ export const MOVE_SPEED = {
 /** Radius (in tiles) of line-of-sight vision. */
 export const VISION_RADIUS = 8;
 
+/**
+ * Directional vision ("view cone"): full vision extends VISION_RADIUS inside
+ * a cone around the aim direction; outside the cone only a short
+ * omnidirectional peripheral radius applies (you are never fully blind
+ * behind you). Hearing stays 360 degrees — that asymmetry is the game.
+ */
+export const VISION_CONE_HALF_RAD = Math.PI / 3; // 120 degree full cone
+export const VISION_PERIPHERAL_RADIUS = 2.5;
+
 /** Escape mode: fallback match duration in seconds (prefer the per-size table). */
 export const MATCH_DURATION_S = 300;
 

@@ -139,11 +139,19 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
       return msg;
     }
     case "input": {
-      const { seq, moveX, moveY, sprint, sneak } = parsed;
+      const { seq, moveX, moveY, sprint, sneak, aimX, aimY } = parsed;
       if (!isFiniteNumber(seq)) return null;
       if (!isDirComponent(moveX) || !isDirComponent(moveY)) return null;
       if (typeof sprint !== "boolean" || typeof sneak !== "boolean") return null;
       const msg: InputMsg = { type: "input", seq, moveX, moveY, sprint, sneak };
+      // Aim is optional but must arrive as a well-formed pair; components are
+      // bounded (the server normalizes, but unbounded floats stay out).
+      if (aimX !== undefined || aimY !== undefined) {
+        if (!isFiniteNumber(aimX) || !isFiniteNumber(aimY)) return null;
+        if (Math.abs(aimX) > 8 || Math.abs(aimY) > 8) return null;
+        msg.aimX = aimX;
+        msg.aimY = aimY;
+      }
       return msg;
     }
     case "chat": {

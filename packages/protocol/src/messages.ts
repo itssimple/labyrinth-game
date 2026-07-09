@@ -40,12 +40,17 @@ export interface StartMatchMsg {
 /**
  * Player intent for one tick. Server clamps/validates everything.
  * moveX/moveY are each -1, 0 or 1 (direction, not velocity).
+ * aimX/aimY: view/aim direction (mouse, right stick, or touch stick) —
+ * finite floats, normalized server-side; absent or zero-length = keep the
+ * previous aim (movement direction as the initial fallback).
  */
 export interface InputMsg {
   type: "input";
   seq: number;
   moveX: number;
   moveY: number;
+  aimX?: number;
+  aimY?: number;
   sprint: boolean;
   sneak: boolean;
 }

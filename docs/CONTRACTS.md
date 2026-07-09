@@ -303,6 +303,60 @@ overlay, sends `chat`.
 Suggested layout: `src/net/` (socket wrapper), `src/game/` (Pixi renderer, fog
 memory, ripples), `src/ui/` (React screens), `src/main.tsx` (wiring).
 
+## Directional vision (view cones) & fog rendering
+
+Vision is directional; hearing is not. Server-authoritative: the cone is
+enforced in snapshot building, never client-side only.
+
+### @echowake/ecs
+
+`computeVisibleCells(maze, x, y, facing?)` — new optional `facing: {x, y}`
+(unit vector). When provided: a cell is visible only if walls permit LOS
+(unchanged) AND (the direction to its center is within VISION_CONE_HALF_RAD
+of facing OR the cell is within VISION_PERIPHERAL_RADIUS). The standing cell
+is always visible. Omitted facing = legacy 360° behavior (keeps old tests and
+callers valid).
+
+`PlayerInput` gains optional `aimX/aimY`: sim normalizes; zero/absent keeps
+the previous facing; initial facing = +x or first move direction. Facing
+drives BOTH the view cone and melee (replacing last-move-direction — you can
+attack while backpedaling). Bots aim where they move (no controller change;
+the sim derives it).
+
+Server: pass each player's facing (from PlayerState.facingX/Y) into
+computeVisibleCells for snapshots AND bot observations. Everything downstream
+(visiblePlayers, visibleItems) inherits the cone automatically.
+
+### Client aim sources (in priority order per frame)
+
+1. Gamepad right stick (Gamepad API, polled in the input loop; left stick
+   moves, deadzone ~0.2).
+2. Touch: twin virtual sticks (left half of screen = move, right half = aim),
+   rendered as translucent circles; only on touch devices.
+3. Mouse: direction from your character's screen position to the pointer.
+Send aimX/aimY in every input message. Keyboard-only fallback: aim follows
+movement direction.
+
+### Fog rendering rewrite (client)
+
+Requirements, with implementation latitude:
+
+- CONSTANT display-object count regardless of maze size and fog churn — no
+  per-cell rects accumulating; paint visibility into a small RenderTexture
+  mask (1 px per cell, smoothed when scaled) or equivalent.
+- Wall faces bordering a visible cell must render fully bright — the current
+  bug dims walls the player is looking straight at.
+- Remembered-but-not-visible area: dimmed AND blurred (bake the static maze
+  to a texture once per match, blur once — the blur input never changes),
+  desaturated per existing FogState styling; unknown = black.
+- Soft cone edges (mask smoothing), no hard per-cell stair-stepping.
+- Minimap and item-ghost memory keep working off FogMemory (unchanged
+  semantics; Visible now means "in cone" since it derives from
+  snapshot.visibleCells).
+
+README "Fog of War"/vision sections gain a paragraph documenting directional
+vision + peripheral radius + hearing-stays-360.
+
 ## Items, combat & auras (v1)
 
 Design in README "Items & Equipment". Data-driven (moddability pillar): item

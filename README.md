@@ -187,6 +187,17 @@ Future expansions:
 
 # Fog of War
 
+## Directional Vision (implemented)
+
+Sight is a cone, hearing is a sphere. Players see a 120° cone toward where
+they aim — mouse pointer on desktop, right analog stick on gamepad, right
+touch stick on mobile — out to the full vision radius, plus a short
+omnidirectional peripheral radius so nobody is fully blind behind them.
+Sound perception stays 360°: turning toward a noise to *look* is a deliberate,
+meaningful act. The cone is enforced by the server (what you don't face is
+never sent to your client), and remembered areas render dimmed and blurred
+rather than crisp.
+
 Players begin with no map knowledge.
 
 Visible areas become permanently remembered.
