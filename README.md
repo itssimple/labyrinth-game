@@ -125,11 +125,15 @@ The same seed should always generate the exact same labyrinth.
 
 Possible generation settings:
 
-- Tiny
-- Small
-- Medium
-- Large
-- Huge
+- Tiny (up to 2 players)
+- Small (up to 4 players)
+- Medium (up to 8 players)
+- Large (up to 12 players)
+- Huge (up to 16 players)
+
+Each size has a maximum player count so matches keep enough labyrinth per
+player for stealth and exploration to matter. The server rejects starting a
+match on a size too small for the lobby.
 
 Future expansions:
 

@@ -21,7 +21,7 @@ export const MATCH_DURATION_S = 300;
 /** Player collision radius in tiles. */
 export const PLAYER_RADIUS = 0.35;
 
-export type MazeSize = "tiny" | "small" | "medium" | "huge" | "large";
+export type MazeSize = "tiny" | "small" | "medium" | "large" | "huge";
 
 /** Maze dimensions per size. Odd numbers suit grid maze algorithms. */
 export const MAZE_DIMENSIONS: Record<MazeSize, { width: number; height: number }> = {
@@ -33,3 +33,25 @@ export const MAZE_DIMENSIONS: Record<MazeSize, { width: number; height: number }
 };
 
 export const MAX_PLAYERS = 16;
+
+/**
+ * Player cap per maze size, keeping enough cells per player for stealth and
+ * exploration to matter (tiny is ~14 cells/player at 16 players — chaos).
+ * The server rejects startMatch when the lobby exceeds the chosen size's cap.
+ */
+export const MAX_PLAYERS_PER_SIZE: Record<MazeSize, number> = {
+  tiny: 2,
+  small: 4,
+  medium: 8,
+  large: 12,
+  huge: 16,
+};
+
+/** Smallest size that fits a lobby of `playerCount`, or null if none does. */
+export function minSizeForPlayers(playerCount: number): MazeSize | null {
+  const order: MazeSize[] = ["tiny", "small", "medium", "large", "huge"];
+  for (const size of order) {
+    if (playerCount <= (MAX_PLAYERS_PER_SIZE[size] ?? 0)) return size;
+  }
+  return null;
+}

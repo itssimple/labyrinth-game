@@ -82,7 +82,8 @@ export interface ErrorMsg {
     | "lobbyFull"
     | "notHost"
     | "notInLobby"
-    | "matchAlreadyStarted";
+    | "matchAlreadyStarted"
+    | "tooManyPlayersForSize";
   message: string;
 }
 
