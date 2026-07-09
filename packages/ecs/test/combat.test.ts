@@ -137,6 +137,99 @@ describe("melee attack", () => {
   });
 });
 
+describe("facing: aim vs movement", () => {
+  it("melee uses aim facing: hits a target you aim at while moving away from it", () => {
+    // Control: backpedaling west WITHOUT aim turns the attacker away — miss.
+    const control = duel();
+    control.setInput(0, { moveX: -1, moveY: 0, sprint: false, sneak: false });
+    control.act(0, { action: "attack" });
+    expect(control.step().hits).toEqual([]);
+
+    // Same movement but aiming east at the victim: the swing connects.
+    const sim = duel();
+    sim.setInput(0, { moveX: -1, moveY: 0, sprint: false, sneak: false, aimX: 1, aimY: 0 });
+    sim.act(0, { action: "attack" });
+    expect(sim.step().hits).toEqual([{ attacker: 0, target: 1, damage: 10 }]);
+    // ... and the backpedal still happened (attack resolves before movement).
+    expect(sim.getPlayerState(0).x).toBeLessThan(1.5);
+  });
+
+  it("initial facing is +x; movement steers it only until the first aim arrives", () => {
+    const sim = duel();
+    expect(sim.getPlayerState(0)).toMatchObject({ facingX: 1, facingY: 0 });
+
+    // No aim ever sent: facing follows movement (bot behavior, unchanged).
+    sim.setInput(0, { moveX: 0, moveY: 1, sprint: false, sneak: false });
+    sim.step();
+    expect(sim.getPlayerState(0)).toMatchObject({ facingX: 0, facingY: 1 });
+
+    // First aim: facing = normalized aim, immediately.
+    sim.setInput(0, { moveX: 0, moveY: 1, sprint: false, sneak: false, aimX: -2, aimY: 0 });
+    sim.step();
+    expect(sim.getPlayerState(0)).toMatchObject({ facingX: -1, facingY: 0 });
+
+    // Aim owns facing now: later movement no longer steers it ...
+    sim.setInput(0, { moveX: 1, moveY: 0, sprint: false, sneak: false });
+    sim.step();
+    expect(sim.getPlayerState(0)).toMatchObject({ facingX: -1, facingY: 0 });
+
+    // ... zero aim keeps the previous facing ...
+    sim.setInput(0, { moveX: 0, moveY: -1, sprint: false, sneak: false, aimX: 0, aimY: 0 });
+    sim.step();
+    expect(sim.getPlayerState(0)).toMatchObject({ facingX: -1, facingY: 0 });
+
+    // ... non-finite aim is ignored entirely ...
+    sim.setInput(0, {
+      moveX: 0,
+      moveY: 0,
+      sprint: false,
+      sneak: false,
+      aimX: Number.NaN,
+      aimY: 1,
+    });
+    sim.step();
+    expect(sim.getPlayerState(0)).toMatchObject({ facingX: -1, facingY: 0 });
+
+    // ... and a fresh nonzero aim is normalized.
+    sim.setInput(0, { moveX: 0, moveY: 0, sprint: false, sneak: false, aimX: 3, aimY: 4 });
+    sim.step();
+    const s = sim.getPlayerState(0);
+    expect(s.facingX).toBeCloseTo(0.6, 12);
+    expect(s.facingY).toBeCloseTo(0.8, 12);
+  });
+
+  it("aim inputs are deterministic: two sims fed identical aim + moves stay identical", () => {
+    const build = () => duel();
+    const simA = build();
+    const simB = build();
+    for (let t = 1; t <= 60; t++) {
+      for (const sim of [simA, simB]) {
+        sim.setInput(0, {
+          moveX: t % 3 === 0 ? 1 : -1,
+          moveY: t % 5 === 0 ? 1 : 0,
+          sprint: false,
+          sneak: false,
+          aimX: Math.sin(t), // deterministic pseudo-aim, occasionally ~0
+          aimY: Math.cos(t),
+        });
+        sim.setInput(1, { moveX: 0, moveY: t % 2 === 0 ? -1 : 1, sprint: false, sneak: false });
+        if (t % 7 === 0) sim.act(0, { action: "attack" });
+      }
+      const ra = simA.step();
+      const rb = simB.step();
+      expect(JSON.stringify(ra)).toBe(JSON.stringify(rb));
+    }
+    for (const slot of [0, 1]) {
+      const a = simA.getPlayerState(slot);
+      const b = simB.getPlayerState(slot);
+      expect(a.x).toBe(b.x);
+      expect(a.y).toBe(b.y);
+      expect(a.facingX).toBe(b.facingX);
+      expect(a.facingY).toBe(b.facingY);
+    }
+  });
+});
+
 describe("damage pipeline (armor + auras)", () => {
   it("carried armor and a self-carried warding charm both reduce damage", () => {
     const maze = makeOpenMaze(16, 15, {

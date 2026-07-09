@@ -25,6 +25,15 @@ export interface PlayerInput {
   moveY: number;
   sprint: boolean;
   sneak: boolean;
+  /**
+   * Optional aim direction (normalized by the sim). Zero/absent/non-finite
+   * keeps the previous facing. Once ANY nonzero aim arrives for a player,
+   * aim owns facing for good: movement no longer updates it. Players that
+   * never aim (bots, keyboard-only clients) keep the legacy
+   * facing-follows-movement behavior.
+   */
+  aimX?: number;
+  aimY?: number;
 }
 
 /** A queued one-shot action; `slot` addresses an inventory slot for use/drop. */
@@ -44,7 +53,11 @@ export interface PlayerState {
   escaped: boolean;
   hp: number;
   dead: boolean;
-  /** Unit vector of the last nonzero move direction (defaults to +x). */
+  /**
+   * Unit vector the player faces (defaults to +x). Aim input owns it once
+   * any aim has arrived; otherwise it follows the last nonzero move
+   * direction. Drives both melee attacks and the server-side view cone.
+   */
   facingX: number;
   facingY: number;
   /** Item def ids, INVENTORY_SLOTS long; null = empty slot. */
@@ -112,6 +125,8 @@ interface CombatSlot {
   dead: boolean;
   facingX: number;
   facingY: number;
+  /** True once any nonzero aim arrived: aim owns facing, movement never again. */
+  hasAim: boolean;
   /** Next tick at which an attack is allowed. */
   attackReadyTick: number;
   inventory: (string | null)[];
@@ -274,6 +289,7 @@ export function createSimulation(opts: {
         dead: false,
         facingX: 1,
         facingY: 0,
+        hasAim: false,
         attackReadyTick: 0,
         inventory: new Array<string | null>(INVENTORY_SLOTS).fill(null),
         queue: [],
@@ -295,6 +311,22 @@ export function createSimulation(opts: {
       InputC.moveY[eid] = sanitizeAxis(input.moveY);
       InputC.sprint[eid] = input.sprint ? 1 : 0;
       InputC.sneak[eid] = input.sneak ? 1 : 0;
+      // Aim: normalize; zero/absent/non-finite keeps the previous facing.
+      // The first valid aim hands facing ownership to aim permanently
+      // (movement stops steering it) — see PlayerInput.
+      const ax = input.aimX ?? 0;
+      const ay = input.aimY ?? 0;
+      if (Number.isFinite(ax) && Number.isFinite(ay)) {
+        const alen = Math.sqrt(ax * ax + ay * ay);
+        if (alen > 0) {
+          const cs = combat[slot];
+          if (cs && isActive(slot)) {
+            cs.facingX = ax / alen;
+            cs.facingY = ay / alen;
+            cs.hasAim = true;
+          }
+        }
+      }
     },
 
     act(slot: number, action: PlayerAction): void {
@@ -323,13 +355,18 @@ export function createSimulation(opts: {
             cs.queue.length = 0; // dead/escaped players cannot act
             continue;
           }
-          // Facing = last nonzero move direction (defaults to +x).
-          const mx = InputC.moveX[eid] as number;
-          const my = InputC.moveY[eid] as number;
-          const len = Math.sqrt(mx * mx + my * my);
-          if (len > 0) {
-            cs.facingX = mx / len;
-            cs.facingY = my / len;
+          // Facing follows the last nonzero move direction (defaults to +x)
+          // ONLY while no aim has ever arrived; after the first aim, aim owns
+          // facing (set in setInput) — you can attack while backpedaling.
+          // Bots never aim, so their facing derives from movement as before.
+          if (!cs.hasAim) {
+            const mx = InputC.moveX[eid] as number;
+            const my = InputC.moveY[eid] as number;
+            const len = Math.sqrt(mx * mx + my * my);
+            if (len > 0) {
+              cs.facingX = mx / len;
+              cs.facingY = my / len;
+            }
           }
         }
         for (let slot = 0; slot < MAX_PLAYERS; slot++) {
