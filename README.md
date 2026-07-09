@@ -18,6 +18,37 @@ If future AI sessions produce code that conflicts with this document, this docum
 
 ---
 
+# Getting Started (Development)
+
+Prerequisites: Node.js >= 20 and pnpm 10 (`corepack enable` gets you pnpm).
+
+```bash
+pnpm install                                # once, from the repo root
+
+pnpm --filter @labyrinth/server dev         # terminal 1: game server on ws://localhost:8080
+pnpm --filter @labyrinth/client-web dev     # terminal 2: web client on http://localhost:5173
+```
+
+Open http://localhost:5173, enter a name, and **Host game**.
+
+- **Solo with bots:** in the lobby, click **Add bot** one or more times, pick a
+  maze size, and **Start match**. Bots explore on their own — listen for their
+  footstep ripples.
+- **Multiplayer:** open a second tab (or another machine on your LAN pointed at
+  your dev server) and **Join game** with the 4-letter lobby code.
+- **Controls:** WASD/arrows to move, Shift to sprint (louder), Ctrl or C to
+  sneak (quieter), Enter to chat.
+- The goal (Escape mode): find the exit tile before the timer runs out.
+
+Playing from another device: the client connects to `ws://localhost:8080/ws`
+by default; set `VITE_SERVER_URL=ws://<host-ip>:8080/ws` when starting the
+client to point it elsewhere.
+
+Verification: `pnpm test` (unit/integration), `pnpm typecheck`, and
+`pnpm e2e` (real two-browser smoke test, plus a solo-with-bot scenario).
+
+---
+
 # Vision
 
 The player enters a procedurally generated labyrinth where navigation, sound, memory and teamwork are more important than reflexes.
