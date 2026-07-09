@@ -28,6 +28,9 @@ pnpm workspaces + Turborepo. Node >= 20, pnpm 10.
 - `pnpm --filter @labyrinth/<pkg> test` — one package's tests (vitest); add `-- path/to/file.test.ts` for a single file
 - `pnpm --filter @labyrinth/server dev` — run the game server (port 8080, tsx watch)
 - `pnpm --filter @labyrinth/client-web dev` — run the web client (Vite, port 5173)
+- `pnpm e2e` — two-browser smoke test (tools/e2e-smoke.mjs): host + join + start + move over a real server
+
+Gotcha: don't put `--` before flags in `pnpm --filter <pkg> <script> --flag` — pnpm forwards the literal `--` and vite/vitest then ignore the flags. Pass flags directly.
 
 Packages export TypeScript source directly (`main: ./src/index.ts`) — no build step during development; apps consume them via the workspace.
 
