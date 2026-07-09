@@ -53,14 +53,16 @@ const serverMessages: ServerMessage[] = [
     type: "snapshot",
     tick: 17,
     ackSeq: 5,
-    you: { x: 3.5, y: 2.5, escaped: false },
+    you: { x: 3.5, y: 2.5, escaped: false, hp: 100, dead: false },
+    inventory: ["rusty-sword", null, null, null],
+    visibleItems: [{ id: 7, item: "bandage", x: 4.5, y: 2.5 }],
     visiblePlayers: [{ playerId: "p-456", x: 4.5, y: 2.5 }],
     visibleCells: [0, 1, 2],
     sounds: [
       { kind: "footstep-walk", x: 6, y: 7, confidence: "medium", intensity: 0.3, tick: 17 },
     ],
   },
-  { type: "matchEnd", reason: "allEscaped", escaped: ["p-123", "p-456"] },
+  { type: "matchEnd", reason: "allEscaped", escaped: ["p-123", "p-456"], eliminated: [] },
   { type: "chatBroadcast", playerId: "p-123", name: "Ariadne", text: "gg" },
 ];
 

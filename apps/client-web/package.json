@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@echowake/common": "workspace:*",
+    "@echowake/content": "workspace:*",
     "@echowake/ecs": "workspace:*",
     "@echowake/math": "workspace:*",
     "@echowake/mazegen": "workspace:*",

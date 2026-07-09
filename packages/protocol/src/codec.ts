@@ -166,6 +166,17 @@ export function decodeClientMessage(raw: string): ClientMessage | null {
     }
     case "listLobbies":
       return { type: "listLobbies" };
+    case "action": {
+      const { seq, action, slot } = parsed;
+      if (!isFiniteNumber(seq)) return null;
+      if (action !== "attack" && action !== "use" && action !== "drop") return null;
+      const out: import("./messages.js").ActionMsg = { type: "action", seq, action };
+      if (slot !== undefined) {
+        if (!isFiniteNumber(slot) || !Number.isInteger(slot) || slot < 0 || slot > 3) return null;
+        out.slot = slot;
+      }
+      return out;
+    }
     case "removeBot": {
       const { playerId } = parsed;
       if (typeof playerId !== "string" || playerId.length < 1 || playerId.length > PLAYER_ID_MAX)

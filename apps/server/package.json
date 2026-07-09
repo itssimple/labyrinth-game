@@ -10,14 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fastify/static": "^9.3.0",
-    "@fastify/websocket": "^11.0.0",
     "@echowake/bots": "workspace:*",
     "@echowake/common": "workspace:*",
+    "@echowake/content": "workspace:*",
     "@echowake/ecs": "workspace:*",
     "@echowake/math": "workspace:*",
     "@echowake/mazegen": "workspace:*",
     "@echowake/protocol": "workspace:*",
+    "@fastify/static": "^9.3.0",
+    "@fastify/websocket": "^11.0.0",
     "fastify": "^5.2.0"
   },
   "devDependencies": {

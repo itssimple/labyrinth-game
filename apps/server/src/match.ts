@@ -258,7 +258,11 @@ export class Match {
         type: "snapshot",
         tick: result.tick,
         ackSeq: p.ackSeq,
-        you: { x: state.x, y: state.y, escaped: state.escaped },
+        // TODO(items round): hp/dead/inventory/visibleItems become real once
+        // @echowake/ecs exposes combat + item state (docs/CONTRACTS.md).
+        you: { x: state.x, y: state.y, escaped: state.escaped, hp: 100, dead: false },
+        inventory: [null, null, null, null],
+        visibleItems: [],
         visiblePlayers,
         visibleCells: [...visible],
         sounds,
@@ -287,7 +291,12 @@ export class Match {
     if (this.interval) clearInterval(this.interval);
     this.interval = null;
     this.releasePlayers();
-    this.lobby.broadcast({ type: "matchEnd", reason, escaped: [...this.escapedIds] });
+    this.lobby.broadcast({
+      type: "matchEnd",
+      reason,
+      escaped: [...this.escapedIds],
+      eliminated: [],
+    });
     this.lobby.match = null;
     // Back to the pre-match lobby screen.
     this.lobby.broadcastState();

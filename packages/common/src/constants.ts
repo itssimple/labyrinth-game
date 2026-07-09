@@ -47,6 +47,15 @@ export const MAZE_DIMENSIONS: Record<MazeSize, { width: number; height: number }
 
 export const MAX_PLAYERS = 16;
 
+// --- Combat & items (v1) ---
+export const MAX_HP = 100;
+export const INVENTORY_SLOTS = 4;
+/** Melee reach in tiles and half-arc in radians (90° total swing). */
+export const MELEE_RANGE = 1.2;
+export const MELEE_HALF_ARC = Math.PI / 4;
+/** Roughly one item per this many cells (deterministic from the seed). */
+export const CELLS_PER_ITEM = 120;
+
 /**
  * Player cap per maze size, keeping enough cells per player for stealth and
  * exploration to matter (tiny is ~14 cells/player at 16 players — chaos).

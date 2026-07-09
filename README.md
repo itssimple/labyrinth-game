@@ -296,6 +296,32 @@ Animations are intentionally minimal.
 
 Gameplay should take priority over visual fidelity.
 
+## Items & Equipment (v1, implemented)
+
+Items spawn deterministically from the match seed, scattered through the
+labyrinth (never on spawn cells), and are visible only in line of sight —
+remembered item locations go stale like everything else. Walk over an item to
+pick it up (4 inventory slots); drop with Q; use consumables with number keys.
+PvP damage is enabled in Escape mode: fights are loud, and death drops
+everything you carry where you fell. Eliminated players are out of the match
+but see their final view until it ends.
+
+Damage reductions and sound multipliers stack multiplicatively. One melee
+swing at a time (cooldown); attacks and hits are loud, high-confidence sounds.
+
+The v1 item set (all data-driven in `packages/content` — mods replace or
+extend the definitions without touching game code):
+
+- **Weapons:** bare fists (weak, quiet), rusty sword (strong, loud swing).
+- **Armor:** leather (blocks some damage, slightly louder footsteps), iron
+  (blocks most damage, much louder footsteps) — protection costs stealth.
+- **Boots:** soft-soled boots halve your footstep noise.
+- **Auras** (passive while carried, radius ~3 tiles):
+  - *Warding charm* — everyone nearby (you included) takes reduced damage.
+  - *Veil charm* — all sounds emitted nearby (friend or foe) are dampened.
+- **Consumables:** bandage (heal), noisemaker (place it to emit fake walking
+  footsteps for a while — indistinguishable from a real player to listeners).
+
 ---
 
 # Art Style

@@ -9,7 +9,10 @@ export type SoundKind =
   | "footstep-sprint"
   | "door"
   | "scream"
-  | "explosion";
+  | "explosion"
+  | "melee-swing"
+  | "melee-hit"
+  | "pickup";
 
 export type SoundConfidence = "low" | "medium" | "high";
 
@@ -45,4 +48,7 @@ export const SOUND_INTENSITY: Record<SoundKind, number> = {
   door: 0.5,
   scream: 0.9,
   explosion: 1.0,
+  "melee-swing": 0.45,
+  "melee-hit": 0.7,
+  pickup: 0.2,
 };

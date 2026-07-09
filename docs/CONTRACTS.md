@@ -295,6 +295,116 @@ overlay, sends `chat`.
 Suggested layout: `src/net/` (socket wrapper), `src/game/` (Pixi renderer, fog
 memory, ripples), `src/ui/` (React screens), `src/main.tsx` (wiring).
 
+## Items, combat & auras (v1)
+
+Design in README "Items & Equipment". Data-driven (moddability pillar): item
+DEFINITIONS live in a new `packages/content` (@echowake/content) and are
+passed INTO the simulation — @echowake/ecs never imports content.
+
+### @echowake/content
+
+```ts
+export interface ItemDef {
+  id: string;                       // "rusty-sword", kebab-case
+  name: string;                     // display name
+  kind: "weapon" | "armor" | "boots" | "charm" | "consumable";
+  // weapon
+  damage?: number;                  // hp per hit
+  cooldownS?: number;               // seconds between swings
+  // armor: damage taken multiplier (<1 protects); boots/armor: footstep multiplier
+  damageTakenMul?: number;
+  footstepMul?: number;
+  // charm auras (radius in tiles, applies to EVERYONE within range, bearer included)
+  aura?: { radius: number; damageTakenMul?: number; emittedSoundMul?: number };
+  // consumable
+  healHp?: number;                  // bandage
+  noisemaker?: { durationS: number; intervalS: number }; // fake footstep-walk emitter
+  /** How often this item appears relative to others (default 1). */
+  spawnWeight?: number;
+}
+export const ITEM_DEFS: readonly ItemDef[]; // the v1 set from the README
+export const FISTS: ItemDef;                // implicit default weapon (not in ITEM_DEFS)
+export function itemDef(id: string): ItemDef | undefined; // lookup over ITEM_DEFS
+```
+
+v1 set: rusty-sword (35 dmg, 0.8s), leather-armor (x0.7 dmg, x1.15 steps),
+iron-armor (x0.4 dmg, x1.4 steps), soft-boots (x0.5 steps), warding-charm
+(aura r3: damage x0.75), veil-charm (aura r3: emitted sound x0.5), bandage
+(+30 hp), noisemaker (10s, every 0.5s). FISTS: 10 dmg, 0.6s. Validate defs at
+module load (throw on nonsense) so bad mods fail loudly.
+
+### @echowake/ecs additions
+
+`createSimulation({ maze, seed, items?: readonly ItemDef[] })` — when `items`
+is provided, spawn floor items deterministically from the seed: about
+`cells / CELLS_PER_ITEM` items, def picked by spawnWeight, never on spawn or
+exit cells, spread out. Omitted => no items (existing tests unaffected).
+
+```ts
+export type PlayerAction = { action: "attack" | "use" | "drop"; slot?: number };
+// Simulation gains:
+act(slot: number, action: PlayerAction): void;   // queued, applied on next step()
+// PlayerState gains: hp: number; dead: boolean; facingX: number; facingY: number;
+//   inventory: (string | null)[]  (INVENTORY_SLOTS long)
+// TickResult gains:
+//   hits: { attacker: number; target: number; damage: number }[]
+//   deaths: number[]                    // slots that died this tick
+//   pickups: { slot: number; item: string }[]
+// New query for snapshots:
+listFloorItems(): { id: number; item: string; x: number; y: number }[]
+```
+
+Rules (all deterministic, all inside the sim):
+
+- Facing = last nonzero move direction (defaults to +x). Attack: melee hit
+  test against alive players within MELEE_RANGE and MELEE_HALF_ARC of facing,
+  walls block (no hitting through walls — check LOS between the two positions
+  with gridLine). Damage = weapon damage (best weapon in inventory, else
+  FISTS) x target's armor damageTakenMul x any warding aura within radius of
+  the TARGET. Cooldown per player from the weapon used. Swing emits
+  melee-swing at the attacker; a connected hit ALSO emits melee-hit at the
+  target. Multiple targets in arc: only the nearest is hit.
+- Pickup: walking within 0.5 tiles of a floor item auto-picks into the first
+  free slot (none free => item stays), emits pickup sound, reported in
+  TickResult.pickups.
+- use(bandage): +healHp clamped to MAX_HP, consumes the item. use(noisemaker):
+  consumes it and places an emitter at the player's position: emits
+  footstep-walk (kind exactly matches real walking — deception by design) at
+  its position every intervalS for durationS. use on non-consumable: no-op.
+- drop: item leaves slot to the floor at the player's position.
+- Footstep emission intensity multiplier: armor footstepMul x boots
+  footstepMul. Emitted-sound aura (veil): every sound whose ORIGIN is within
+  radius of a bearer gets intensity x emittedSoundMul (applies to noisemakers
+  too). Multipliers stack multiplicatively; clamp final intensity to [0, 1].
+- Death: hp <= 0 => dead; drop entire inventory on the floor at the death
+  position; dead players stop simulating (like escaped) and are reported in
+  TickResult.deaths once. No respawns in Escape v1.
+- Escaped players cannot attack or be attacked.
+
+### Protocol / server / client
+
+Already pinned in packages/protocol: ActionMsg (attack/use/drop + slot 0..3),
+SnapshotMsg.you gains hp/dead, SnapshotMsg.inventory + visibleItems,
+MatchEndMsg.eliminated.
+
+Server: pass ITEM_DEFS from @echowake/content into createSimulation; buffer
+ActionMsg per player (validated seq like input; multiple distinct actions per
+tick allowed, at most one attack) and apply via sim.act before step; snapshot
+visibleItems = floor items whose cell is in the client's visibleCells;
+inventory/hp/dead from PlayerState. Death: push playerId into an eliminatedIds
+list (order), included in matchEnd.eliminated. Match end condition becomes:
+every connected human is escaped OR dead (bots still never block match end).
+Dead players keep receiving snapshots (their frozen view) until match end.
+
+Client: render visible floor items (small colored diamond + first letter,
+distinct per kind) with stale-memory ghosts like fog; HP bar + 4 inventory
+slot boxes in the HUD (number keys 1-4 = use that slot, Q = drop selected/
+first occupied, Space or left-click = attack); red flash when your hp drops;
+"ELIMINATED" banner + spectate-your-last-view when dead; match-end screen
+shows escaped AND eliminated lists. Audio: synth for melee-swing (whoosh),
+melee-hit (thud), pickup (soft chime) in the existing synth module. Bots v1
+ignore items entirely (TODO: hunter behavior may use weapons later).
+
 ## Latency, lobby browser (server), and client audio
 
 Ping: any hello'd client may send `ping {t}`; the server replies `pong {t}`

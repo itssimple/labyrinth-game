@@ -84,6 +84,18 @@ export interface ListLobbiesMsg {
   type: "listLobbies";
 }
 
+/**
+ * A discrete in-match action (as opposed to continuous movement input).
+ * attack: melee swing toward facing (slot ignored); use/drop target an
+ * inventory slot 0..3. Server validates everything (cooldowns, ownership).
+ */
+export interface ActionMsg {
+  type: "action";
+  seq: number;
+  action: "attack" | "use" | "drop";
+  slot?: number;
+}
+
 export type ClientMessage =
   | HelloMsg
   | CreateLobbyMsg
@@ -96,7 +108,8 @@ export type ClientMessage =
   | RemoveBotMsg
   | PingMsg
   | SetLobbyPublicMsg
-  | ListLobbiesMsg;
+  | ListLobbiesMsg
+  | ActionMsg;
 
 // ---------------------------------------------------------------------------
 // Server -> Client
@@ -183,13 +196,27 @@ export interface VisiblePlayerState {
  * to know: its own state, players inside its vision, cells it currently sees,
  * and confidence-banded sounds. Never leaks hidden positions.
  */
+/** An item lying in the maze, inside this client's line of sight. */
+export interface VisibleItemState {
+  /** Server-side item instance id (stable while it lies there). */
+  id: number;
+  /** Item definition id from @echowake/content (e.g. "rusty-sword"). */
+  item: string;
+  x: number;
+  y: number;
+}
+
 export interface SnapshotMsg {
   type: "snapshot";
   tick: number;
   /** Last input seq the server consumed from this client. */
   ackSeq: number;
-  you: { x: number; y: number; escaped: boolean };
+  you: { x: number; y: number; escaped: boolean; hp: number; dead: boolean };
+  /** Inventory slots (item definition ids), null = empty. Yours only. */
+  inventory: (string | null)[];
   visiblePlayers: VisiblePlayerState[];
+  /** Items currently in line of sight. */
+  visibleItems: VisibleItemState[];
   /** Cell indices (row-major) currently in line of sight. */
   visibleCells: number[];
   sounds: PerceivedSound[];
@@ -200,6 +227,8 @@ export interface MatchEndMsg {
   reason: "allEscaped" | "timeUp";
   /** Player ids that reached the exit, in escape order. */
   escaped: string[];
+  /** Player ids eliminated by combat, in death order. */
+  eliminated: string[];
 }
 
 export interface ChatBroadcastMsg {
