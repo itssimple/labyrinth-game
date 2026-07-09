@@ -17,6 +17,15 @@ function sanitizeText(s: string): string {
   return s.replace(/[\u0000-\u001f\u007f]/g, "").trim();
 }
 
+// Inbound rate limit (token bucket, per connection): the capacity/refill sit
+// comfortably above the 20Hz input cadence plus chat, but stop message floods
+// and lobby-code brute forcing. Wall clock is fine at this transport boundary
+// — it never touches simulation state.
+const RATE_CAPACITY = 40;
+const RATE_REFILL_PER_S = 30;
+/** A connection that keeps flooding (this many dropped messages) is closed. */
+const RATE_DROP_LIMIT = 200;
+
 /**
  * Wires one raw WebSocket into the game: enforces the hello/welcome handshake
  * (protocol version check), then dispatches decoded messages to lobby/match
@@ -25,6 +34,19 @@ function sanitizeText(s: string): string {
  */
 export function handleConnection(socket: WebSocket, registry: LobbyRegistry): void {
   let client: Client | null = null;
+  let tokens = RATE_CAPACITY;
+  let lastRefillMs = Date.now();
+  let dropped = 0;
+
+  /** Takes one rate-limit token (refilling by elapsed time); false = drop. */
+  const takeToken = (): boolean => {
+    const now = Date.now();
+    tokens = Math.min(tokens + ((now - lastRefillMs) / 1000) * RATE_REFILL_PER_S, RATE_CAPACITY);
+    lastRefillMs = now;
+    if (tokens < 1) return false;
+    tokens -= 1;
+    return true;
+  };
 
   const send = (msg: ServerMessage): void => {
     if (socket.readyState === socket.OPEN) socket.send(encodeMessage(msg));
@@ -120,9 +142,17 @@ export function handleConnection(socket: WebSocket, registry: LobbyRegistry): vo
         // this boundary: the resulting string becomes the shared deterministic
         // input for maze generation and simulation on server and clients.
         const seed = msg.options.seed.trim() || randomUUID();
-        const match = new Match(lobby, { ...msg.options, seed });
-        lobby.match = match;
-        match.start();
+        // Safety net: an exception while building/starting the match must
+        // never escape the message handler and kill the whole process.
+        try {
+          const match = new Match(lobby, { ...msg.options, seed });
+          lobby.match = match;
+          match.start();
+        } catch {
+          lobby.match?.abort();
+          lobby.match = null;
+          sendError("badMessage", "failed to start match");
+        }
         return;
       }
       case "input": {
@@ -148,6 +178,14 @@ export function handleConnection(socket: WebSocket, registry: LobbyRegistry): vo
   };
 
   socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+    if (!takeToken()) {
+      dropped++;
+      if (dropped >= RATE_DROP_LIMIT) {
+        sendError("badMessage", "rate limit exceeded");
+        socket.close(1008, "rate limit exceeded");
+      }
+      return;
+    }
     const msg = decodeClientMessage(data.toString());
     if (!msg) {
       sendError("badMessage", "malformed message");

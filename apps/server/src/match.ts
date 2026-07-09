@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   MATCH_DURATION_S_PER_SIZE,
   TICK_RATE,
@@ -44,6 +45,13 @@ export class Match {
 
   private readonly lobby: Lobby;
   private readonly seed: string;
+  /**
+   * Secret seed for perceiveSound jitter. The maze seed is broadcast to every
+   * client in matchStart, so jitter seeded from it alone could be re-derived
+   * by a modified client to recover exact sound origins (a wallhack). The
+   * random salt never appears in any outbound message.
+   */
+  private readonly jitterSeed: string;
   private readonly sim: Simulation;
   private readonly players = new Map<string, MatchPlayer>();
   private readonly escapedIds: string[] = [];
@@ -62,6 +70,7 @@ export class Match {
         : {}),
     };
     this.seed = options.seed;
+    this.jitterSeed = `${this.seed}#${randomUUID()}`;
     this.endTick = MATCH_DURATION_S_PER_SIZE[this.options.size] * TICK_RATE;
     this.maze = generateMaze(this.options);
     this.sim = createSimulation({ maze: this.maze, seed: this.seed });
@@ -115,6 +124,7 @@ export class Match {
   abort(): void {
     if (this.interval) clearInterval(this.interval);
     this.interval = null;
+    this.releasePlayers();
     if (this.lobby.match === this) this.lobby.match = null;
   }
 
@@ -166,7 +176,7 @@ export class Match {
       const sounds: PerceivedSound[] = [];
       for (const raw of result.sounds) {
         if (raw.emitterId === p.slot) continue; // never echo your own sounds
-        const heard = perceiveSound(this.maze, this.seed, raw, state.x, state.y);
+        const heard = perceiveSound(this.maze, this.jitterSeed, raw, state.x, state.y);
         if (heard) sounds.push(heard);
       }
       const snapshot: SnapshotMsg = {
@@ -198,9 +208,21 @@ export class Match {
   private end(reason: "allEscaped" | "timeUp"): void {
     if (this.interval) clearInterval(this.interval);
     this.interval = null;
+    this.releasePlayers();
     this.lobby.broadcast({ type: "matchEnd", reason, escaped: [...this.escapedIds] });
     this.lobby.match = null;
     // Back to the pre-match lobby screen.
     this.lobby.broadcastState();
+  }
+
+  /**
+   * Releases every remaining player's simulation entity. bitECS keeps a
+   * module-global entity-id pool shared across all worlds, so any entity not
+   * removed here leaks its id forever — after enough matches the server would
+   * crash with "max entities reached".
+   */
+  private releasePlayers(): void {
+    for (const p of this.players.values()) this.sim.removePlayer(p.slot);
+    this.players.clear();
   }
 }

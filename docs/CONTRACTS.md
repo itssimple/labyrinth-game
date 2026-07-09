@@ -112,6 +112,10 @@ export function computeVisibleCells(maze: Maze, x: number, y: number): Set<numbe
  *   >= 0.25 → "medium" (position jittered ~1.5 tiles)
  *   > threshold → "low" (position jittered ~4 tiles), else null.
  * - Jitter must be deterministic: seed from (matchSeed, sound.tick, sound.emitterId).
+ *   The maze seed is public (broadcast in matchStart), so the server passes a
+ *   secret per-match salt as `matchSeed` — never the public seed, and the salt
+ *   is never sent to clients — otherwise a modified client could re-derive the
+ *   jitter and recover exact sound origins (a wallhack).
  */
 export function perceiveSound(
   maze: Maze,
@@ -151,9 +155,11 @@ export function decodeServerMessage(raw: string): ServerMessage | null;
 ```
 
 `decodeClientMessage` is a security boundary: hand-written checks (no deps),
-clamp string lengths (name ≤ 20, chat ≤ 200, code = 4 alpha), reject unknown
-`type`, ensure numbers are finite, moveX/moveY ∈ {-1, 0, 1}. Tests: round-trip
-every message type; fuzz garbage inputs return null.
+clamp string lengths (name ≤ 20, chat ≤ 200, code = 4 alpha, maze seed ≤ 64,
+maze modifiers ≤ 8 entries of ≤ 32 chars each — the seed is hashed every tick
+and echoed to all clients, so unbounded values are a DoS vector), reject
+unknown `type`, ensure numbers are finite, moveX/moveY ∈ {-1, 0, 1}. Tests:
+round-trip every message type; fuzz garbage inputs return null.
 
 ## @labyrinth/server (apps/server)
 
@@ -174,8 +180,9 @@ if the lobby has more players than the chosen size allows, reply
 `error: "tooManyPlayersForSize"` and do not start.
 Per tick: apply latest input per player (server clamps values; stale/absent
 input = keep previous), `step()`, then per client build `SnapshotMsg` using
-`computeVisibleCells` (visiblePlayers = others whose cell ∈ your visibleCells)
-and `perceiveSound` for each TickResult sound (skip your own sounds). Send
+`computeVisibleCells` (visiblePlayers = others whose cell ∈ your visibleCells;
+players who have escaped are omitted from everyone's visiblePlayers) and
+`perceiveSound` for each TickResult sound (skip your own sounds). Send
 snapshots every tick (JSON is fine for the slice). Match ends when all
 non-disconnected players escaped or `tick >= endTick` → `matchEnd`, lobby
 returns to pre-match state. Disconnects remove the player. Chat broadcasts to

@@ -143,6 +143,24 @@ const malformedClientInputs: [label: string, raw: string][] = [
     "startMatch non-string modifier element",
     '{"type":"startMatch","options":{"seed":"s","size":"tiny","modifiers":[1]}}',
   ],
+  [
+    "startMatch oversized seed (65 chars)",
+    `{"type":"startMatch","options":{"seed":"${"s".repeat(65)}","size":"tiny"}}`,
+  ],
+  [
+    "startMatch huge seed (60KB)",
+    `{"type":"startMatch","options":{"seed":"${"s".repeat(60_000)}","size":"tiny"}}`,
+  ],
+  [
+    "startMatch too many modifiers (9)",
+    `{"type":"startMatch","options":{"seed":"s","size":"tiny","modifiers":${JSON.stringify(
+      Array.from({ length: 9 }, () => "m"),
+    )}}}`,
+  ],
+  [
+    "startMatch oversized modifier (33 chars)",
+    `{"type":"startMatch","options":{"seed":"s","size":"tiny","modifiers":["${"m".repeat(33)}"]}}`,
+  ],
 
   // input
   ["input missing fields", '{"type":"input","seq":1}'],
@@ -194,6 +212,18 @@ describe("decodeClientMessage boundary and hardening behavior", () => {
       type: "chat",
       text: "c".repeat(200),
     });
+  });
+
+  it("accepts a 64-char seed and 8 modifiers of 32 chars each (at the limit)", () => {
+    const seed = "s".repeat(64);
+    const modifiers = Array.from({ length: 8 }, () => "m".repeat(32));
+    expect(
+      decodeClientMessage(
+        `{"type":"startMatch","options":{"seed":"${seed}","size":"tiny","modifiers":${JSON.stringify(
+          modifiers,
+        )}}}`,
+      ),
+    ).toEqual({ type: "startMatch", options: { seed, size: "tiny", modifiers } });
   });
 
   it("accepts lowercase lobby codes (case-insensitive)", () => {

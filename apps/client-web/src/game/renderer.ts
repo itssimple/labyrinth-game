@@ -111,9 +111,13 @@ export class GameRenderer {
 
     this.syncOthers(nowMs);
 
-    // New perceived sounds -> ripples.
+    // New perceived sounds -> ripples; skip anything older than a second of
+    // ticks (a hidden tab stops draining while snapshots keep arriving).
     if (match.soundQueue.length > 0) {
-      for (const s of match.soundQueue.splice(0)) this.ripples.spawn(s);
+      const minTick = match.latestTick - TICK_RATE;
+      for (const s of match.soundQueue.splice(0)) {
+        if (s.tick >= minTick) this.ripples.spawn(s);
+      }
     }
     this.ripples.update(ticker.deltaMS);
 

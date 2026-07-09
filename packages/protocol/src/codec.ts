@@ -15,6 +15,12 @@ const NAME_MAX = 20;
 const CHAT_MAX = 200;
 /** Lobby code: exactly 4 ASCII letters, case-insensitive. */
 const LOBBY_CODE_RE = /^[A-Za-z]{4}$/;
+/** Maximum maze seed length accepted from clients (seeds are hashed per tick). */
+const SEED_MAX = 64;
+/** Maximum number of maze modifiers accepted from clients. */
+const MODIFIERS_MAX = 8;
+/** Maximum length of a single maze modifier accepted from clients. */
+const MODIFIER_MAX = 32;
 
 /** The five valid maze sizes; must stay in sync with MazeSize in @labyrinth/common. */
 const MAZE_SIZES: ReadonlySet<string> = new Set<MazeSize>([
@@ -58,7 +64,7 @@ function isDirComponent(v: unknown): v is -1 | 0 | 1 {
 function decodeMazeGenOptions(v: unknown): MazeGenOptions | null {
   if (!isRecord(v)) return null;
   const { seed, size, difficulty, modifiers } = v;
-  if (typeof seed !== "string") return null;
+  if (typeof seed !== "string" || seed.length > SEED_MAX) return null;
   if (typeof size !== "string" || !MAZE_SIZES.has(size)) return null;
 
   const out: MazeGenOptions = { seed, size: size as MazeSize };
@@ -68,9 +74,9 @@ function decodeMazeGenOptions(v: unknown): MazeGenOptions | null {
     out.difficulty = difficulty;
   }
   if (modifiers !== undefined) {
-    if (!Array.isArray(modifiers)) return null;
+    if (!Array.isArray(modifiers) || modifiers.length > MODIFIERS_MAX) return null;
     for (const m of modifiers) {
-      if (typeof m !== "string") return null;
+      if (typeof m !== "string" || m.length > MODIFIER_MAX) return null;
     }
     out.modifiers = modifiers as string[];
   }

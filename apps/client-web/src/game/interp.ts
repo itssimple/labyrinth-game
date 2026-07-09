@@ -70,6 +70,10 @@ export class RemotePlayers {
       if (e === undefined) {
         e = { interp: new Interpolator(), lastTick: tick };
         this.entries.set(p.playerId, e);
+      } else if (tick - e.lastTick > 2) {
+        // Re-entered vision after a gap: never lerp from the stale last-seen
+        // position (it would visibly slide through walls) — snap instead.
+        e.interp = new Interpolator();
       }
       e.interp.push(p.x, p.y, recvMs);
       e.lastTick = tick;

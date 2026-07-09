@@ -16,6 +16,8 @@ import { GameSocket, serverUrl, type SocketStatus } from "./socket";
 
 const LOBBY_CODE_RE = /^[A-Za-z]{4}$/;
 const CHAT_KEEP = 50;
+/** Hard cap on queued-but-unrendered sounds (hidden tabs stop draining). */
+const SOUND_QUEUE_MAX = 64;
 
 /**
  * Owns everything React must not: the WebSocket, the match state (snapshot
@@ -169,7 +171,8 @@ export class GameSession {
   }
 
   private onLobbyState(msg: LobbyStateMsg): void {
-    this.nameById.clear();
+    // Upsert, never clear: players who leave mid-match (e.g. after escaping)
+    // must still resolve to a name on the match-end screen.
     for (const p of msg.players) this.nameById.set(p.playerId, p.name);
     const screen = this.store.get().screen;
     this.store.set({
@@ -204,7 +207,15 @@ export class GameSession {
     match.others.update(msg.visiblePlayers, msg.tick, recvMs);
     match.fog.update(msg.visibleCells, msg.tick / TICK_RATE);
     match.fogDirty = true;
-    if (msg.sounds.length > 0) match.soundQueue.push(...msg.sounds);
+    if (msg.sounds.length > 0) {
+      // Bound the queue: a hidden tab pauses the renderer (rAF) while
+      // snapshots keep arriving, so drop sounds older than a second and cap
+      // the backlog — refocusing must not flood thousands of ripples.
+      const minTick = msg.tick - TICK_RATE;
+      const queue = match.soundQueue.filter((s) => s.tick >= minTick);
+      queue.push(...msg.sounds);
+      match.soundQueue = queue.length > SOUND_QUEUE_MAX ? queue.slice(-SOUND_QUEUE_MAX) : queue;
+    }
     match.escaped = msg.you.escaped;
 
     const remainingS = Math.max(0, Math.ceil((match.endTick - msg.tick) / TICK_RATE));
